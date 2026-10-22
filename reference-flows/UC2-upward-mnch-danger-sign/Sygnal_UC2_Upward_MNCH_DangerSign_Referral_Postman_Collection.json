@@ -1,0 +1,727 @@
+{
+  "info": {
+    "name": "Sygnal — UC2 Upward MNCH Danger-Sign Referral (DIGIT HCM → ComEMR)",
+    "_postman_id": "d3fa64b3-d3b2-5233-8928-47f84efff603",
+    "description": "### Quick-start: environment setup\n\n1. Import this use case's **`*_Dev.postman_environment.json`** (in the same\n   `reference-flows/` folder) into Postman (Environments → Import). Each use case\n   ships a self-contained environment — Postman allows only one active environment\n   at a time, so per-UC envs avoid one ever-growing shared file.\n2. Select that environment from the picker.\n3. Set `bpp_uri`, `bap_uri`, and `auth_token` for your sandbox. `bpp_uri` is the target\n   base URL and switches by transaction (ComEMR for T1, HCM for UC3, CARE for UC4-T2).\n4. `network_id` is `example.net/health` (STUB) — confirm with the registry team.\n5. Subscriber IDs (`hcm_np_id`, `comemr_np_id`, `care_np_id`) and all keys are STUBBED.\n\n**Envelope note:** `context.version` is `2.0.0` — the Beckn *core message* version (a\nconst in beckn.yaml). The domain schema packs (HealthReferral / ServiceCoordination)\nare v2.1; that shows up in the `@context` URLs, not the envelope.\n\n## Sygnal — UC2 · Upward MNCH Danger-Sign Referral (DIGIT HCM → ComEMR)\n\n**Scenario:** During net distribution the CHW identifies an MNCH danger sign in a pregnant\nmother. DIGIT HCM raises an EMERGENCY referral to ComEMR. The alert reaching both the PHU\nand the household's **routine CHW** is handled inside ComEMR via its notification roster.\n\n**Roles / topology:** As UC1 — single on-network transaction (T1). BAP = DIGIT HCM, BPP = ComEMR.\n\n**What's different from UC1:** the `notificationRoster` carries an extra entry with\n`partyRole: OBSERVER` for the household's routine CHW (dual-routing handled inside ComEMR);\n`clinicalUrgencyTier` = `EMERGENCY`.\n\n**Payload:** `HealthReferral`, consent class A (CHW-mediated), coded `targetCriteria`\n(`OBSTETRICS` / `MNCH` — self-authored, same vocab gap as UC1). Deviation folder uses\n`PATIENT_CANCELLED`.\n",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "domain",
+      "value": "health",
+      "type": "string"
+    },
+    {
+      "key": "network_id",
+      "value": "example.net/health",
+      "type": "string",
+      "description": "STUB — confirm exact value with the network registry team."
+    },
+    {
+      "key": "codedvalue_ctx",
+      "value": "https://raw.githubusercontent.com/beckn/DHP-Specs/main/devkit/stub/context.jsonld",
+      "type": "string"
+    },
+    {
+      "key": "auth_token",
+      "value": "",
+      "type": "string",
+      "description": "Network-issued JWT — set before running."
+    },
+    {
+      "key": "bpp_uri",
+      "value": "",
+      "type": "string",
+      "description": "Target base URL. Switch per transaction (ComEMR for T1; HCM for UC3; CARE for UC4-T2)."
+    },
+    {
+      "key": "bap_uri",
+      "value": "",
+      "type": "string",
+      "description": "Caller callback base URL for on_* simulations."
+    },
+    {
+      "key": "hcm_np_id",
+      "value": "hcm-np-digit-hcm-001",
+      "type": "string",
+      "description": "DIGIT HCM subscriber id (STUB)."
+    },
+    {
+      "key": "comemr_np_id",
+      "value": "comemr-np-spice-001",
+      "type": "string",
+      "description": "ComEMR/SPICE subscriber id (STUB)."
+    },
+    {
+      "key": "care_np_id",
+      "value": "care-np-phu-ext-001",
+      "type": "string",
+      "description": "CARE (external PHU HIS) subscriber id (STUB)."
+    },
+    {
+      "key": "transaction_id_uc1",
+      "value": "b1a1e1d1-0001-4000-8000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "coordination_id_uc1",
+      "value": "b1a1e1d1-0001-4000-8000-0000000000a1",
+      "type": "string",
+      "description": "UC1 Referral ID."
+    },
+    {
+      "key": "transaction_id_uc2",
+      "value": "b1a1e1d1-0002-4000-8000-000000000002",
+      "type": "string"
+    },
+    {
+      "key": "coordination_id_uc2",
+      "value": "b1a1e1d1-0002-4000-8000-0000000000a2",
+      "type": "string",
+      "description": "UC2 Referral ID."
+    },
+    {
+      "key": "transaction_id_uc3",
+      "value": "b1a1e1d1-0003-4000-8000-000000000003",
+      "type": "string"
+    },
+    {
+      "key": "coordination_id_uc3",
+      "value": "b1a1e1d1-0003-4000-8000-0000000000a3",
+      "type": "string",
+      "description": "UC3 task-out coordination id."
+    },
+    {
+      "key": "transaction_id_uc4_t1",
+      "value": "b1a1e1d1-0004-4000-8000-000000000041",
+      "type": "string"
+    },
+    {
+      "key": "transaction_id_uc4_t2",
+      "value": "b1a1e1d1-0004-4000-8000-000000000042",
+      "type": "string"
+    },
+    {
+      "key": "coordination_id_uc4",
+      "value": "b1a1e1d1-0004-4000-8000-0000000000a4",
+      "type": "string",
+      "description": "UC4 T1 Referral ID; carried into T2 as coordinationRef."
+    },
+    {
+      "key": "booking_id_uc4",
+      "value": "b1a1e1d1-0004-4000-8000-0000000000b4",
+      "type": "string",
+      "description": "UC4 T2 (CARE) booking id = T1 targetBookingRef."
+    },
+    {
+      "key": "chw_campaign_participant_id",
+      "value": "participant-chw-campaign",
+      "type": "string"
+    },
+    {
+      "key": "chw_clinical_participant_id",
+      "value": "participant-chw-clinical",
+      "type": "string"
+    },
+    {
+      "key": "child_participant_id",
+      "value": "participant-child-uc1",
+      "type": "string"
+    },
+    {
+      "key": "mother_participant_id",
+      "value": "participant-mother-uc2",
+      "type": "string"
+    },
+    {
+      "key": "routine_chw_participant_id",
+      "value": "participant-routine-chw",
+      "type": "string"
+    },
+    {
+      "key": "comemr_coordinator_participant_id",
+      "value": "participant-comemr-coordinator",
+      "type": "string"
+    },
+    {
+      "key": "care_provider_participant_id",
+      "value": "participant-care-provider",
+      "type": "string"
+    },
+    {
+      "key": "coord_resource_id",
+      "value": "res-comemr-coord",
+      "type": "string"
+    },
+    {
+      "key": "coord_offer_id",
+      "value": "offer-comemr-coord",
+      "type": "string"
+    },
+    {
+      "key": "coord_catalog_id",
+      "value": "catalog-comemr-coord",
+      "type": "string"
+    },
+    {
+      "key": "campaign_resource_id",
+      "value": "res-hcm-campaign-field",
+      "type": "string"
+    },
+    {
+      "key": "campaign_offer_id",
+      "value": "offer-hcm-campaign-field",
+      "type": "string"
+    },
+    {
+      "key": "campaign_catalog_id",
+      "value": "catalog-hcm-campaign",
+      "type": "string"
+    },
+    {
+      "key": "care_resource_id",
+      "value": "res-care-phu",
+      "type": "string"
+    },
+    {
+      "key": "care_offer_id",
+      "value": "offer-care-phu",
+      "type": "string"
+    },
+    {
+      "key": "care_catalog_id",
+      "value": "catalog-care-phu",
+      "type": "string"
+    },
+    {
+      "key": "referralnote_doc_ref",
+      "value": "referralnote-001",
+      "type": "string"
+    },
+    {
+      "key": "outcomenote_doc_ref",
+      "value": "outcomenote-001",
+      "type": "string"
+    },
+    {
+      "key": "consent_id",
+      "value": "b1a1e1d1-0000-4000-8000-0000000000c1",
+      "type": "string"
+    },
+    {
+      "key": "consent_doc_ref",
+      "value": "consent-001",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Referral Coordination  (BAP DIGIT HCM → BPP ComEMR)",
+      "description": "Upward MNCH danger-sign referral with dual-routing handled inside ComEMR (routine CHW = OBSERVER on the roster).",
+      "item": [
+        {
+          "name": "01 — select",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"select\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc2}}\",\n    \"messageId\": \"a5139fc4-58a6-55ed-832e-32286013506e\",\n    \"timestamp\": \"2026-07-06T11:20:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"status\": {\n        \"code\": \"DRAFT\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"DRAFT\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{coord_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{coord_offer_id}}\",\n            \"resourceIds\": [\n              \"{{coord_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"participants\": [\n        {\n          \"id\": \"{{chw_campaign_participant_id}}\",\n          \"participantAttributes\": {\n            \"@context\": \"https://schema.beckn.io/HealthParticipant/v2.1/context.jsonld\",\n            \"@type\": \"hpa:HealthParticipant\",\n            \"participantRole\": \"COMMUNITY_HEALTH_WORKER\",\n            \"healthIds\": [\n              {\n                \"system\": \"ASHA-ID\",\n                \"value\": \"ASHA-HCM-0007\"\n              }\n            ]\n          }\n        },\n        {\n          \"id\": \"{{mother_participant_id}}\",\n          \"participantAttributes\": {\n            \"@context\": \"https://schema.beckn.io/HealthParticipant/v2.1/context.jsonld\",\n            \"@type\": \"hpa:HealthParticipant\",\n            \"participantRole\": \"PATIENT\",\n            \"healthIds\": [\n              {\n                \"system\": \"ABHA\",\n                \"value\": \"91-5555-6666-7777\"\n              }\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc2}}\",\n        \"lifecycleState\": \"DRAFT\",\n        \"clinicalUrgencyTier\": \"EMERGENCY\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"OBSTETRICS\",\n            \"display\": \"Obstetrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"MNCH\",\n            \"display\": \"Maternal, Newborn & Child Health\"\n          },\n          \"procedureNeeds\": [\n            \"ANC_EMERGENCY_ASSESSMENT\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bpp_uri}}/select"
+            },
+            "description": "During net distribution the CHW identifies an MNCH danger sign and opens an EMERGENCY referral to ComEMR. Directed — discover skipped."
+          },
+          "response": []
+        },
+        {
+          "name": "02 — on_select",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_select\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc2}}\",\n    \"messageId\": \"ade191bd-f2e9-5560-8047-3825955565ea\",\n    \"timestamp\": \"2026-07-06T11:21:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc2}}\",\n      \"status\": {\n        \"code\": \"DRAFT\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"DRAFT\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{coord_resource_id}}\",\n              \"descriptor\": {\n                \"name\": \"ComEMR Coordination Desk\",\n                \"shortDesc\": \"Care-coordination desk\",\n                \"longDesc\": \"Standing coordination capability: routes referrals to clinical CHW / PHU, manages lifecycle and handover.\"\n              },\n              \"resourceAttributes\": {\n                \"@context\": \"https://schema.beckn.io/ServiceCoordinationResource/v2.1/context.jsonld\",\n                \"@type\": \"scres:ServiceCoordinationResource\",\n                \"coordinationScope\": {\n                  \"referralCategories\": [\n                    {\n                      \"@context\": \"{{codedvalue_ctx}}\",\n                      \"@type\": \"ReferralCategory\",\n                      \"code\": \"CLINICAL\",\n                      \"display\": \"Clinical\"\n                    }\n                  ],\n                  \"targetServiceTypes\": [\n                    {\n                      \"@context\": \"{{codedvalue_ctx}}\",\n                      \"@type\": \"TargetServiceType\",\n                      \"code\": \"CONSULTATION\",\n                      \"display\": \"Consultation\"\n                    }\n                  ],\n                  \"geographyScope\": [\n                    {\n                      \"@context\": \"{{codedvalue_ctx}}\",\n                      \"@type\": \"LGDDistrict\",\n                      \"code\": \"DEMO-01\",\n                      \"display\": \"Campaign District\"\n                    }\n                  ]\n                },\n                \"acceptanceMode\": \"MANUAL_REVIEW\",\n                \"supportedUrgencyTiers\": [\n                  \"ROUTINE\",\n                  \"URGENT\",\n                  \"EMERGENCY\"\n                ]\n              },\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{coord_offer_id}}\",\n            \"resourceIds\": [\n              \"{{coord_resource_id}}\"\n            ],\n            \"offerAttributes\": {\n              \"@context\": \"https://schema.beckn.io/HealthOffer/v2.1/context.jsonld\",\n              \"@type\": \"hof:HealthOffer\",\n              \"healthServiceType\": \"PHYSICAL_CONSULTATION\",\n              \"offerType\": \"SINGLE_EVENT\",\n              \"outcomeCommitment\": {\n                \"attendanceToOutcomeSlaHours\": 24,\n                \"outcomeNoteFormatStandard\": \"FHIR/DiagnosticReport\",\n                \"mandatory\": true\n              }\n            }\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc2}}\",\n        \"lifecycleState\": \"DRAFT\",\n        \"clinicalUrgencyTier\": \"EMERGENCY\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"OBSTETRICS\",\n            \"display\": \"Obstetrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"MNCH\",\n            \"display\": \"Maternal, Newborn & Child Health\"\n          },\n          \"procedureNeeds\": [\n            \"ANC_EMERGENCY_ASSESSMENT\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_select"
+            },
+            "description": "ComEMR accepts; assigns Referral ID."
+          },
+          "response": []
+        },
+        {
+          "name": "03 — init",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"init\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc2}}\",\n    \"messageId\": \"365a0389-3451-52d7-9964-a72e204e1f0b\",\n    \"timestamp\": \"2026-07-06T11:22:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc2}}\",\n      \"status\": {\n        \"code\": \"DRAFT\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"DRAFT\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{coord_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{coord_offer_id}}\",\n            \"resourceIds\": [\n              \"{{coord_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"participants\": [\n        {\n          \"id\": \"{{chw_campaign_participant_id}}\",\n          \"participantAttributes\": {\n            \"@context\": \"https://schema.beckn.io/HealthParticipant/v2.1/context.jsonld\",\n            \"@type\": \"hpa:HealthParticipant\",\n            \"participantRole\": \"COMMUNITY_HEALTH_WORKER\",\n            \"healthIds\": [\n              {\n                \"system\": \"ASHA-ID\",\n                \"value\": \"ASHA-HCM-0007\"\n              }\n            ],\n            \"primaryLanguage\": \"en\"\n          },\n          \"descriptor\": {\n            \"name\": \"CHW — Campaign Mode\",\n            \"shortDesc\": \"ITN campaign worker (nominator)\"\n          }\n        },\n        {\n          \"id\": \"{{mother_participant_id}}\",\n          \"participantAttributes\": {\n            \"@context\": \"https://schema.beckn.io/HealthParticipant/v2.1/context.jsonld\",\n            \"@type\": \"hpa:HealthParticipant\",\n            \"participantRole\": \"PATIENT\",\n            \"healthIds\": [\n              {\n                \"system\": \"ABHA\",\n                \"value\": \"91-5555-6666-7777\"\n              }\n            ],\n            \"primaryLanguage\": \"en\"\n          },\n          \"descriptor\": {\n            \"name\": \"Pregnant Mother (MNCH danger sign)\",\n            \"shortDesc\": \"Patient (subject)\"\n          }\n        },\n        {\n          \"id\": \"{{routine_chw_participant_id}}\",\n          \"participantAttributes\": {\n            \"@context\": \"https://schema.beckn.io/HealthParticipant/v2.1/context.jsonld\",\n            \"@type\": \"hpa:HealthParticipant\",\n            \"participantRole\": \"COMMUNITY_HEALTH_WORKER\",\n            \"healthIds\": [\n              {\n                \"system\": \"ASHA-ID\",\n                \"value\": \"ASHA-ROUTINE-0012\"\n              }\n            ],\n            \"primaryLanguage\": \"en\"\n          },\n          \"descriptor\": {\n            \"name\": \"Routine CHW (household)\",\n            \"shortDesc\": \"Observer on the notification roster\"\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc2}}\",\n        \"lifecycleState\": \"DRAFT\",\n        \"clinicalUrgencyTier\": \"EMERGENCY\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"OBSTETRICS\",\n            \"display\": \"Obstetrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"MNCH\",\n            \"display\": \"Maternal, Newborn & Child Health\"\n          },\n          \"procedureNeeds\": [\n            \"ANC_EMERGENCY_ASSESSMENT\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bpp_uri}}/init"
+            },
+            "description": "Binding intent; the routine CHW appears as a full participant (observer)."
+          },
+          "response": []
+        },
+        {
+          "name": "04 — on_init",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_init\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc2}}\",\n    \"messageId\": \"a1f7800b-58bf-5439-b6a8-194a666a6ce7\",\n    \"timestamp\": \"2026-07-06T11:23:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc2}}\",\n      \"status\": {\n        \"code\": \"DRAFT\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"DRAFT\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{coord_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{coord_offer_id}}\",\n            \"resourceIds\": [\n              \"{{coord_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"participants\": [\n        {\n          \"id\": \"{{chw_campaign_participant_id}}\",\n          \"participantAttributes\": {\n            \"@context\": \"https://schema.beckn.io/HealthParticipant/v2.1/context.jsonld\",\n            \"@type\": \"hpa:HealthParticipant\",\n            \"participantRole\": \"COMMUNITY_HEALTH_WORKER\",\n            \"healthIds\": [\n              {\n                \"system\": \"ASHA-ID\",\n                \"value\": \"ASHA-HCM-0007\"\n              }\n            ],\n            \"primaryLanguage\": \"en\"\n          },\n          \"descriptor\": {\n            \"name\": \"CHW — Campaign Mode\",\n            \"shortDesc\": \"ITN campaign worker (nominator)\"\n          }\n        },\n        {\n          \"id\": \"{{mother_participant_id}}\",\n          \"participantAttributes\": {\n            \"@context\": \"https://schema.beckn.io/HealthParticipant/v2.1/context.jsonld\",\n            \"@type\": \"hpa:HealthParticipant\",\n            \"participantRole\": \"PATIENT\",\n            \"healthIds\": [\n              {\n                \"system\": \"ABHA\",\n                \"value\": \"91-5555-6666-7777\"\n              }\n            ],\n            \"primaryLanguage\": \"en\"\n          },\n          \"descriptor\": {\n            \"name\": \"Pregnant Mother (MNCH danger sign)\",\n            \"shortDesc\": \"Patient (subject)\"\n          }\n        },\n        {\n          \"id\": \"{{routine_chw_participant_id}}\",\n          \"participantAttributes\": {\n            \"@context\": \"https://schema.beckn.io/HealthParticipant/v2.1/context.jsonld\",\n            \"@type\": \"hpa:HealthParticipant\",\n            \"participantRole\": \"COMMUNITY_HEALTH_WORKER\",\n            \"healthIds\": [\n              {\n                \"system\": \"ASHA-ID\",\n                \"value\": \"ASHA-ROUTINE-0012\"\n              }\n            ],\n            \"primaryLanguage\": \"en\"\n          },\n          \"descriptor\": {\n            \"name\": \"Routine CHW (household)\",\n            \"shortDesc\": \"Observer on the notification roster\"\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc2}}\",\n        \"lifecycleState\": \"DRAFT\",\n        \"clinicalUrgencyTier\": \"EMERGENCY\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"OBSTETRICS\",\n            \"display\": \"Obstetrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"MNCH\",\n            \"display\": \"Maternal, Newborn & Child Health\"\n          },\n          \"procedureNeeds\": [\n            \"ANC_EMERGENCY_ASSESSMENT\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_init"
+            },
+            "description": "Draft echoed back."
+          },
+          "response": []
+        },
+        {
+          "name": "05 — confirm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"confirm\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc2}}\",\n    \"messageId\": \"1ddeb380-172e-55ed-9296-801f658a7f65\",\n    \"timestamp\": \"2026-07-06T11:25:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc2}}\",\n      \"status\": {\n        \"code\": \"ACTIVE\"\n      },\n      \"descriptor\": {\n        \"name\": \"Upward Referral — MNCH Danger Sign\",\n        \"docs\": [\n          {\n            \"id\": \"{{referralnote_doc_ref}}\",\n            \"name\": \"Field Referral Note\",\n            \"url\": \"https://docs.example.org/referral/{{referralnote_doc_ref}}.pdf\",\n            \"mimeType\": \"application/pdf\",\n            \"standard\": \"FHIR/ServiceRequest\"\n          },\n          {\n            \"id\": \"{{consent_doc_ref}}\",\n            \"name\": \"Consent — CHW-mediated (Class A)\",\n            \"url\": \"https://docs.example.org/consent/{{consent_doc_ref}}.pdf\",\n            \"mimeType\": \"application/pdf\"\n          }\n        ]\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"ACTIVE\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{coord_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{coord_offer_id}}\",\n            \"resourceIds\": [\n              \"{{coord_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc2}}\",\n        \"lifecycleState\": \"ACTIVE\",\n        \"clinicalUrgencyTier\": \"EMERGENCY\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"OBSTETRICS\",\n            \"display\": \"Obstetrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"MNCH\",\n            \"display\": \"Maternal, Newborn & Child Health\"\n          },\n          \"procedureNeeds\": [\n            \"ANC_EMERGENCY_ASSESSMENT\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        },\n        \"consent\": {\n          \"consentClass\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"ConsentClass\",\n            \"code\": \"A\",\n            \"display\": \"Explicit, mediated (CHW-mediated)\"\n          },\n          \"consentId\": \"{{consent_id}}\",\n          \"consentDocRef\": \"{{consent_doc_ref}}\",\n          \"patientParticipantId\": \"{{mother_participant_id}}\",\n          \"consentStandard\": \"HealthConsent/v1\",\n          \"consentedAt\": \"2026-07-06T11:15:00+03:00\",\n          \"consentedBy\": \"{{chw_campaign_participant_id}}\",\n          \"purposeOfCollection\": [\n            \"REFERRAL_CARE\",\n            \"TREATMENT\"\n          ],\n          \"mediatorCredentialRef\": \"did:example:chw:{{chw_campaign_participant_id}}\"\n        },\n        \"referralNote\": {\n          \"artifactRef\": \"{{referralnote_doc_ref}}\",\n          \"credentialScope\": \"did:example:comemr:{{comemr_coordinator_participant_id}}\",\n          \"accessWindowStart\": \"2026-07-06T11:15:00+03:00\",\n          \"accessWindowEnd\": \"2026-08-06T11:00:00+03:00\",\n          \"revocationStatus\": \"ACTIVE\",\n          \"specialty\": \"Obstetrics / MNCH\",\n          \"urgency\": \"EMERGENCY\",\n          \"priorResultRefs\": []\n        },\n        \"notificationRoster\": [\n          {\n            \"partyRef\": \"{{chw_campaign_participant_id}}\",\n            \"partyRole\": \"NOMINATOR\",\n            \"notificationScope\": \"FULL\",\n            \"channelRef\": \"sms:+910000000031\"\n          },\n          {\n            \"partyRef\": \"{{mother_participant_id}}\",\n            \"partyRole\": \"SUBJECT\",\n            \"notificationScope\": \"LIFECYCLE_ONLY\",\n            \"channelRef\": \"sms:+910000000032\"\n          },\n          {\n            \"partyRef\": \"{{routine_chw_participant_id}}\",\n            \"partyRole\": \"OBSERVER\",\n            \"notificationScope\": \"LIFECYCLE_ONLY\",\n            \"channelRef\": \"sms:+910000000033\"\n          }\n        ]\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bpp_uri}}/confirm"
+            },
+            "description": "Confirm with consent (class A), referral note, and the notification roster carrying an OBSERVER entry (partyRole OBSERVER) for the household's routine CHW."
+          },
+          "response": []
+        },
+        {
+          "name": "06 — on_confirm  ★ Referral issued (coordinationId)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_confirm\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc2}}\",\n    \"messageId\": \"005cda56-0642-5f49-a441-a80f7ddb204f\",\n    \"timestamp\": \"2026-07-06T11:26:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc2}}\",\n      \"status\": {\n        \"code\": \"ACTIVE\"\n      },\n      \"descriptor\": {\n        \"name\": \"Upward Referral — MNCH Danger Sign\",\n        \"docs\": [\n          {\n            \"id\": \"{{referralnote_doc_ref}}\",\n            \"name\": \"Field Referral Note\",\n            \"url\": \"https://docs.example.org/referral/{{referralnote_doc_ref}}.pdf\",\n            \"mimeType\": \"application/pdf\",\n            \"standard\": \"FHIR/ServiceRequest\"\n          },\n          {\n            \"id\": \"{{consent_doc_ref}}\",\n            \"name\": \"Consent — CHW-mediated (Class A)\",\n            \"url\": \"https://docs.example.org/consent/{{consent_doc_ref}}.pdf\",\n            \"mimeType\": \"application/pdf\"\n          }\n        ]\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"ACTIVE\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{coord_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{coord_offer_id}}\",\n            \"resourceIds\": [\n              \"{{coord_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"participants\": [\n        {\n          \"id\": \"{{chw_campaign_participant_id}}\",\n          \"participantAttributes\": {\n            \"@context\": \"https://schema.beckn.io/HealthParticipant/v2.1/context.jsonld\",\n            \"@type\": \"hpa:HealthParticipant\",\n            \"participantRole\": \"COMMUNITY_HEALTH_WORKER\",\n            \"healthIds\": [\n              {\n                \"system\": \"ASHA-ID\",\n                \"value\": \"ASHA-HCM-0007\"\n              }\n            ],\n            \"primaryLanguage\": \"en\"\n          },\n          \"descriptor\": {\n            \"name\": \"CHW — Campaign Mode\",\n            \"shortDesc\": \"ITN campaign worker (nominator)\"\n          }\n        },\n        {\n          \"id\": \"{{mother_participant_id}}\",\n          \"participantAttributes\": {\n            \"@context\": \"https://schema.beckn.io/HealthParticipant/v2.1/context.jsonld\",\n            \"@type\": \"hpa:HealthParticipant\",\n            \"participantRole\": \"PATIENT\",\n            \"healthIds\": [\n              {\n                \"system\": \"ABHA\",\n                \"value\": \"91-5555-6666-7777\"\n              }\n            ],\n            \"primaryLanguage\": \"en\"\n          },\n          \"descriptor\": {\n            \"name\": \"Pregnant Mother (MNCH danger sign)\",\n            \"shortDesc\": \"Patient (subject)\"\n          }\n        },\n        {\n          \"id\": \"{{routine_chw_participant_id}}\",\n          \"participantAttributes\": {\n            \"@context\": \"https://schema.beckn.io/HealthParticipant/v2.1/context.jsonld\",\n            \"@type\": \"hpa:HealthParticipant\",\n            \"participantRole\": \"COMMUNITY_HEALTH_WORKER\",\n            \"healthIds\": [\n              {\n                \"system\": \"ASHA-ID\",\n                \"value\": \"ASHA-ROUTINE-0012\"\n              }\n            ],\n            \"primaryLanguage\": \"en\"\n          },\n          \"descriptor\": {\n            \"name\": \"Routine CHW (household)\",\n            \"shortDesc\": \"Observer on the notification roster\"\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc2}}\",\n        \"lifecycleState\": \"ACTIVE\",\n        \"clinicalUrgencyTier\": \"EMERGENCY\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"OBSTETRICS\",\n            \"display\": \"Obstetrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"MNCH\",\n            \"display\": \"Maternal, Newborn & Child Health\"\n          },\n          \"procedureNeeds\": [\n            \"ANC_EMERGENCY_ASSESSMENT\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        },\n        \"consent\": {\n          \"consentClass\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"ConsentClass\",\n            \"code\": \"A\",\n            \"display\": \"Explicit, mediated (CHW-mediated)\"\n          },\n          \"consentId\": \"{{consent_id}}\",\n          \"consentDocRef\": \"{{consent_doc_ref}}\",\n          \"patientParticipantId\": \"{{mother_participant_id}}\",\n          \"consentStandard\": \"HealthConsent/v1\",\n          \"consentedAt\": \"2026-07-06T11:15:00+03:00\",\n          \"consentedBy\": \"{{chw_campaign_participant_id}}\",\n          \"purposeOfCollection\": [\n            \"REFERRAL_CARE\",\n            \"TREATMENT\"\n          ],\n          \"mediatorCredentialRef\": \"did:example:chw:{{chw_campaign_participant_id}}\"\n        },\n        \"referralNote\": {\n          \"artifactRef\": \"{{referralnote_doc_ref}}\",\n          \"credentialScope\": \"did:example:comemr:{{comemr_coordinator_participant_id}}\",\n          \"accessWindowStart\": \"2026-07-06T11:15:00+03:00\",\n          \"accessWindowEnd\": \"2026-08-06T11:00:00+03:00\",\n          \"revocationStatus\": \"ACTIVE\",\n          \"specialty\": \"Obstetrics / MNCH\",\n          \"urgency\": \"EMERGENCY\",\n          \"priorResultRefs\": []\n        },\n        \"notificationRoster\": [\n          {\n            \"partyRef\": \"{{chw_campaign_participant_id}}\",\n            \"partyRole\": \"NOMINATOR\",\n            \"notificationScope\": \"FULL\",\n            \"channelRef\": \"sms:+910000000031\"\n          },\n          {\n            \"partyRef\": \"{{mother_participant_id}}\",\n            \"partyRole\": \"SUBJECT\",\n            \"notificationScope\": \"LIFECYCLE_ONLY\",\n            \"channelRef\": \"sms:+910000000032\"\n          },\n          {\n            \"partyRef\": \"{{routine_chw_participant_id}}\",\n            \"partyRole\": \"OBSERVER\",\n            \"notificationScope\": \"LIFECYCLE_ONLY\",\n            \"channelRef\": \"sms:+910000000033\"\n          }\n        ]\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_confirm"
+            },
+            "description": "ComEMR accepts. Dual-routing (PHU + routine CHW) is handled INSIDE ComEMR using the roster — the routine CHW is the OBSERVER. Single on-network transaction."
+          },
+          "response": []
+        },
+        {
+          "name": "07 — status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"status\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc2}}\",\n    \"messageId\": \"347fa51f-1426-5db1-abd6-665d9fd4e6a9\",\n    \"timestamp\": \"2026-07-06T12:00:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc2}}\",\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"ACTIVE\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{coord_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{coord_offer_id}}\",\n            \"resourceIds\": [\n              \"{{coord_resource_id}}\"\n            ]\n          }\n        }\n      ]\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bpp_uri}}/status"
+            },
+            "description": "HCM polls progress."
+          },
+          "response": []
+        },
+        {
+          "name": "08 — on_status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_status\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc2}}\",\n    \"messageId\": \"3fe66759-fb73-5e2a-b3bf-97f8b2ba1648\",\n    \"timestamp\": \"2026-07-06T12:01:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc2}}\",\n      \"status\": {\n        \"code\": \"ACTIVE\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"ACTIVE\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{coord_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{coord_offer_id}}\",\n            \"resourceIds\": [\n              \"{{coord_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc2}}\",\n        \"lifecycleState\": \"TARGET_NOTIFIED\",\n        \"clinicalUrgencyTier\": \"EMERGENCY\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"OBSTETRICS\",\n            \"display\": \"Obstetrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"MNCH\",\n            \"display\": \"Maternal, Newborn & Child Health\"\n          },\n          \"procedureNeeds\": [\n            \"ANC_EMERGENCY_ASSESSMENT\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        },\n        \"notificationRoster\": [\n          {\n            \"partyRef\": \"{{chw_campaign_participant_id}}\",\n            \"partyRole\": \"NOMINATOR\",\n            \"notificationScope\": \"FULL\",\n            \"channelRef\": \"sms:+910000000031\"\n          },\n          {\n            \"partyRef\": \"{{mother_participant_id}}\",\n            \"partyRole\": \"SUBJECT\",\n            \"notificationScope\": \"LIFECYCLE_ONLY\",\n            \"channelRef\": \"sms:+910000000032\"\n          },\n          {\n            \"partyRef\": \"{{routine_chw_participant_id}}\",\n            \"partyRole\": \"OBSERVER\",\n            \"notificationScope\": \"LIFECYCLE_ONLY\",\n            \"channelRef\": \"sms:+910000000033\"\n          }\n        ]\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_status"
+            },
+            "description": "PHU notified; routine CHW (observer) looped in for transport/guidance."
+          },
+          "response": []
+        },
+        {
+          "name": "09 — update — ATTENDED",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"update\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc2}}\",\n    \"messageId\": \"47d032b7-3090-5f49-9946-ed970d2b4e93\",\n    \"timestamp\": \"2026-07-06T14:00:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc2}}\",\n      \"status\": {\n        \"code\": \"ACTIVE\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"ACTIVE\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{coord_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{coord_offer_id}}\",\n            \"resourceIds\": [\n              \"{{coord_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc2}}\",\n        \"lifecycleState\": \"ATTENDED\",\n        \"clinicalUrgencyTier\": \"EMERGENCY\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"OBSTETRICS\",\n            \"display\": \"Obstetrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"MNCH\",\n            \"display\": \"Maternal, Newborn & Child Health\"\n          },\n          \"procedureNeeds\": [\n            \"ANC_EMERGENCY_ASSESSMENT\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bpp_uri}}/update"
+            },
+            "description": "Mother attended the PHU; MNCH workflow underway."
+          },
+          "response": []
+        },
+        {
+          "name": "10 — on_update",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_update\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc2}}\",\n    \"messageId\": \"977eeda1-9888-5048-b9af-9aba78470b52\",\n    \"timestamp\": \"2026-07-06T14:01:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc2}}\",\n      \"status\": {\n        \"code\": \"ACTIVE\"\n      },\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc2}}\",\n        \"lifecycleState\": \"ATTENDED\",\n        \"clinicalUrgencyTier\": \"EMERGENCY\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"OBSTETRICS\",\n            \"display\": \"Obstetrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"MNCH\",\n            \"display\": \"Maternal, Newborn & Child Health\"\n          },\n          \"procedureNeeds\": [\n            \"ANC_EMERGENCY_ASSESSMENT\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_update"
+            },
+            "description": "Ack."
+          },
+          "response": []
+        },
+        {
+          "name": "11 — update — OUTCOME_RECEIVED",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"update\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc2}}\",\n    \"messageId\": \"a4215648-96e9-51b9-898c-fa4f20da2cc5\",\n    \"timestamp\": \"2026-07-07T09:00:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc2}}\",\n      \"status\": {\n        \"code\": \"ACTIVE\"\n      },\n      \"descriptor\": {\n        \"name\": \"Outcome\",\n        \"docs\": [\n          {\n            \"id\": \"{{outcomenote_doc_ref}}\",\n            \"name\": \"Outcome Note — MNCH evaluation\",\n            \"url\": \"https://docs.example.org/outcome/{{outcomenote_doc_ref}}.pdf\",\n            \"mimeType\": \"application/pdf\",\n            \"standard\": \"FHIR/DiagnosticReport\"\n          }\n        ]\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"ACTIVE\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{coord_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{coord_offer_id}}\",\n            \"resourceIds\": [\n              \"{{coord_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc2}}\",\n        \"lifecycleState\": \"OUTCOME_RECEIVED\",\n        \"clinicalUrgencyTier\": \"EMERGENCY\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"OBSTETRICS\",\n            \"display\": \"Obstetrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"MNCH\",\n            \"display\": \"Maternal, Newborn & Child Health\"\n          },\n          \"procedureNeeds\": [\n            \"ANC_EMERGENCY_ASSESSMENT\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        },\n        \"handoverDocument\": {\n          \"artifactRef\": \"{{outcomenote_doc_ref}}\",\n          \"credentialScope\": \"did:example:hcm:{{chw_campaign_participant_id}}\",\n          \"accessWindowStart\": \"2026-07-07T09:00:00+03:00\",\n          \"accessWindowEnd\": \"2026-08-07T09:00:00+03:00\",\n          \"revocationStatus\": \"ACTIVE\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bpp_uri}}/update"
+            },
+            "description": "MNCH evaluation + outcome returned to HCM."
+          },
+          "response": []
+        },
+        {
+          "name": "12 — on_update",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_update\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc2}}\",\n    \"messageId\": \"73306396-4795-5331-bfad-b0d3f570612d\",\n    \"timestamp\": \"2026-07-07T09:01:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc2}}\",\n      \"status\": {\n        \"code\": \"ACTIVE\"\n      },\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc2}}\",\n        \"lifecycleState\": \"OUTCOME_RECEIVED\",\n        \"clinicalUrgencyTier\": \"EMERGENCY\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"OBSTETRICS\",\n            \"display\": \"Obstetrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"MNCH\",\n            \"display\": \"Maternal, Newborn & Child Health\"\n          },\n          \"procedureNeeds\": [\n            \"ANC_EMERGENCY_ASSESSMENT\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_update"
+            },
+            "description": "Ack."
+          },
+          "response": []
+        },
+        {
+          "name": "13 — update — CLOSED",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"update\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc2}}\",\n    \"messageId\": \"05e282d9-fcc7-5158-91fd-d2b0e9482077\",\n    \"timestamp\": \"2026-07-07T12:00:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc2}}\",\n      \"status\": {\n        \"code\": \"COMPLETE\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"CLOSED\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{coord_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{coord_offer_id}}\",\n            \"resourceIds\": [\n              \"{{coord_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc2}}\",\n        \"lifecycleState\": \"CLOSED\",\n        \"clinicalUrgencyTier\": \"EMERGENCY\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"OBSTETRICS\",\n            \"display\": \"Obstetrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"MNCH\",\n            \"display\": \"Maternal, Newborn & Child Health\"\n          },\n          \"procedureNeeds\": [\n            \"ANC_EMERGENCY_ASSESSMENT\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bpp_uri}}/update"
+            },
+            "description": "Referral closed."
+          },
+          "response": []
+        },
+        {
+          "name": "14 — on_update  ★ Referral closed",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_update\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc2}}\",\n    \"messageId\": \"76c2c8e0-4bb1-52fc-a9ad-9ae4622deadf\",\n    \"timestamp\": \"2026-07-07T12:01:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc2}}\",\n      \"status\": {\n        \"code\": \"COMPLETE\"\n      },\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc2}}\",\n        \"lifecycleState\": \"CLOSED\",\n        \"clinicalUrgencyTier\": \"EMERGENCY\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"OBSTETRICS\",\n            \"display\": \"Obstetrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"MNCH\",\n            \"display\": \"Maternal, Newborn & Child Health\"\n          },\n          \"procedureNeeds\": [\n            \"ANC_EMERGENCY_ASSESSMENT\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_update"
+            },
+            "description": "Terminal ack."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Deviation — PATIENT_CANCELLED (in-band)",
+      "description": "In-band coded deviation branch.",
+      "item": [
+        {
+          "name": "01 — update — lifecycleState CANCELLED + deviation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"update\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc2}}\",\n    \"messageId\": \"760deb8c-5d3e-58c4-b1c8-12439211d7a9\",\n    \"timestamp\": \"2026-07-06T13:00:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc2}}\",\n      \"status\": {\n        \"code\": \"ACTIVE\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"ACTIVE\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{coord_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{coord_offer_id}}\",\n            \"resourceIds\": [\n              \"{{coord_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc2}}\",\n        \"lifecycleState\": \"CANCELLED\",\n        \"clinicalUrgencyTier\": \"EMERGENCY\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"OBSTETRICS\",\n            \"display\": \"Obstetrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"MNCH\",\n            \"display\": \"Maternal, Newborn & Child Health\"\n          },\n          \"procedureNeeds\": [\n            \"ANC_EMERGENCY_ASSESSMENT\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        },\n        \"deviation\": {\n          \"reasonCode\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"DeviationReasonCode\",\n            \"code\": \"PATIENT_CANCELLED\",\n            \"display\": \"Patient Cancelled\"\n          },\n          \"detectedBy\": \"{{comemr_np_id}}\",\n          \"detectedAt\": \"2026-07-06T13:00:00+03:00\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bpp_uri}}/update"
+            },
+            "description": "In-band deviation, standard hrf:DeviationReasonCode member PATIENT_CANCELLED."
+          },
+          "response": []
+        },
+        {
+          "name": "02 — on_update",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_update\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc2}}\",\n    \"messageId\": \"99b3381d-71f2-5acd-8ee9-aab2b3593d46\",\n    \"timestamp\": \"2026-07-06T13:01:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc2}}\",\n      \"status\": {\n        \"code\": \"ACTIVE\"\n      },\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc2}}\",\n        \"lifecycleState\": \"CANCELLED\",\n        \"clinicalUrgencyTier\": \"EMERGENCY\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"OBSTETRICS\",\n            \"display\": \"Obstetrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"MNCH\",\n            \"display\": \"Maternal, Newborn & Child Health\"\n          },\n          \"procedureNeeds\": [\n            \"ANC_EMERGENCY_ASSESSMENT\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_update"
+            },
+            "description": "Ack."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

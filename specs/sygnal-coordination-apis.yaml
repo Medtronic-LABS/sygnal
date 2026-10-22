@@ -1,0 +1,1608 @@
+openapi: 3.1.0
+info:
+  title: Sygnal — Coordination Extension APIs
+  version: 0.9.0
+  description: >-
+    Sygnal is an open enabler of Care Coordination Networks. This document is the
+    PUBLIC DRAFT (v0.9) of the Sygnal coordination APIs: the Sygnal-native primitives that Beckn does NOT already provide; they sit
+    ALONGSIDE the reused Beckn v2 verbs (discover, select, init, confirm, status,
+    update, cancel) which carry the CareTransition lifecycle and are NOT redefined
+    here. Beckn carries the handoffs; Sygnal carries trust, observation, governance,
+    and shared planning.
+
+
+    Naming & shape:
+      - Paths are `sygnal/{noun}/{verb}` with callbacks `sygnal/{noun}/on_{verb}`.
+        The `sygnal/` top segment is the spec/extension namespace (itself domain-neutral).
+        The HEALTH binding lives in `context.domain` (healthcare:care-coordination) and the
+        payload `@type` (sygnal:<Noun>), NOT in the path or the schema name.
+      - `context.action` mirrors the path as a flat compound token (e.g. "sygnal/deviation/flag").
+      - SCHEMAS ARE NAMED BY RESOURCE NOUN; the verb lives only in the path/action. Resource
+        schemas are domain-neutral nouns: DeviationReport, CoordinationEvent, CoordinationPolicy,
+        SharedPlan, Signal. The `message` field carries the resource DIRECTLY — there are no
+        per-endpoint message wrappers, with two narrow, documented exceptions that carry a set:
+        `event/report` ({policyId, events[]}) and `policy/on_get` ({policies[]}). Reads (get) use a
+        single shared `Query` selector.
+
+
+    Design stance:
+      - Transport mirrors Beckn v2: every request is a {context, message} envelope,
+        immediately acknowledged with a signed `200 Ack` / `202 AckNoCallback`, with
+        the business result (where any) arriving asynchronously on the paired `on_*`
+        callback. Keys resolve via the subnet registry named by `context.networkId`; addresses come
+        from the optional `senderUri` / `receiverUri` header fields, else the registry `url`.
+      - Trust is Beckn's, unchanged (NFH-007 Authentication and Trust): every message is
+        Ed25519-signed by a registry-held key; solicited callbacks chain to the request's
+        signature; every synchronous response carries a signed `Signature` header. The
+        network facilitator running the observation/governance services is an ordinary
+        registered participant — no privileged channel. Sygnal adds only ROLE authorization
+        per action (401 AUT_UNAUTHORIZED_ACTION) — see the Sygnal documentation (Concepts > Trust and security).
+      - Report in, signal out. `sygnal/event/report` is edge -> centre and fire-and-forget
+        (no on_report — the centre's response, when it has one, is a `sygnal/signal/emit`).
+      - The centre OBSERVES and SIGNALS; it never decides. `Signal.recommendedAction`
+        is advisory only, never a clinical or operational directive.
+      - Clinical data stays at the edges. Aggregate reporting carries metrics only.
+        Individual reporting is a bounded, governed carve-out for notifiable conditions
+        (see CoordinationPolicy > ReportingSection.dataMinimization) — the minimum fields needed
+        to act, and no more. When several policies apply, dataMinimization always merges to the
+        most restrictive result, whatever precedence the network declares.
+      - Two channels. `sygnal/event/report` carries coordination semantics (CoordinationEvent).
+        Operational telemetry about the exchanges themselves (counts, latencies, ACK/NACK, timeouts)
+        is governed by the policy's InstrumentationSection and travels on the network telemetry
+        channel, never on event/report and never with payload content.
+      - Each payload is JSON-LD (`@context` + `@type`) and annotated with its FHIR
+        binding via `x-fhir-resource`.
+
+
+    Core component note: `RequestDigest`, `Signature`, `CallbackSignature`, `AckSignature`,
+    `Ack` and `Error` are copied VERBATIM (x-mirrors) from canonical `api/v2.0.0/beckn.yaml`
+    @ a22300a, as are the `Authorization` parameters and the `AckSignatureHeader`. In
+    production they SHOULD `$ref` that file. `SygnalContext` is the Sygnal header: a strict,
+    closed subset of core `Context` using `senderId` / `receiverId` (no bap*/bpp*); `Nack`
+    is core's Nack* body shape. Security is carried by the signature headers,
+    as in core, so `security: []` is declared at root.
+
+
+    Deferred in this iteration: `sygnal/attestation/attest` (Attestation resource).
+    Consequently the POSITIVE signed-proof path for a delivery to a non-participant
+    household and third-party verification have no dedicated API yet; only the MISMATCH
+    path is reachable, via `sygnal/deviation/flag` (counter-party mode).
+  contact:
+    name: Sygnal project, led by Medtronic LABS
+    url: https://github.com/Medtronic-LABS/sygnal
+  license:
+    name: CC-BY-SA-4.0
+    identifier: CC-BY-SA-4.0
+
+security: []
+
+servers:
+  - url: '{subscriberUrl}'
+    variables:
+      subscriberUrl:
+        default: https://network-participant.example.org
+        description: Subscriber-specific HTTPS origin of the receiving participant.
+
+tags:
+  - name: Trust
+    description: Counter-party / third-party discrepancy reporting.
+  - name: Observation
+    description: Policy-governed event reporting (edge to centre) and alert delivery (centre to edge).
+  - name: Governance
+    description: Coordination-policy distribution to edges (reporting, SLAs, instrumentation, precedence).
+  - name: Coordination
+    description: Shared-plan synchronisation across many parties.
+  - name: Read
+    description: Narrow, status-shaped current-state pulls (get/on_get) for reconciliation — never search or list.
+
+paths:
+
+  /sygnal/deviation/flag:
+    post:
+      operationId: deviationFlag
+      summary: Report a discrepancy in a coordination event (silent by default)
+      description: >-
+        A participant (counter-party to a CareTransition, or an authorised third party such
+        as a supervisor) reports a discrepancy. In the normal case no deviation is ever sent —
+        agreement is the default and is silent. Only a mismatch produces this call. The
+        receiver returns the disposition asynchronously via `sygnal/deviation/on_flag`. THIRD_PARTY mode requires
+        the sender to hold the SUPERVISOR role (else `401` AUT_UNAUTHORIZED_ACTION).
+      tags: [Trust]
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [context, message]
+              properties:
+                context:
+                  allOf:
+                    - $ref: '#/components/schemas/SygnalContext'
+                    - type: object
+                      properties: { action: { const: sygnal/deviation/flag } }
+                message:
+                  $ref: '#/components/schemas/DeviationReport'
+      responses:
+        '200': { $ref: '#/components/responses/Ack' }
+        '202': { $ref: '#/components/responses/AckNoCallback' }
+        '400': { $ref: '#/components/responses/NackBadRequest' }
+        '401': { $ref: '#/components/responses/NackUnauthorized' }
+        '403': { $ref: '#/components/responses/NackDiscretionary' }
+        '429': { $ref: '#/components/responses/NackTooManyRequests' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /sygnal/deviation/on_flag:
+    post:
+      operationId: deviationOnFlag
+      summary: Return the disposition of a flagged deviation
+      description: >-
+        Sent by the receiver back to the reporter, carrying the updated DeviationReport whose
+        `respondentStatus` reflects the disposition (ACKNOWLEDGED, RESOLVED, or DISPUTED). Correlated by `messageId`.
+        A later change of disposition is sent as an unsolicited on_flag with a fresh messageId.
+      tags: [Trust]
+      parameters:
+        - $ref: '#/components/parameters/CallbackAuthorizationHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [context, message]
+              properties:
+                context:
+                  allOf:
+                    - $ref: '#/components/schemas/SygnalContext'
+                    - type: object
+                      properties: { action: { const: sygnal/deviation/on_flag } }
+                message:
+                  $ref: '#/components/schemas/DeviationReport'
+      responses:
+        '200': { $ref: '#/components/responses/Ack' }
+        '400': { $ref: '#/components/responses/NackBadRequest' }
+        '401': { $ref: '#/components/responses/NackUnauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /sygnal/event/report:
+    post:
+      operationId: eventReport
+      summary: Emit coordination metadata event(s) per the active coordination policy (fire-and-forget)
+      description: >-
+        The edge emits one or more CoordinationEvents to the Sygnal observation layer, governed
+        by the active CoordinationPolicy. Fire-and-forget: the normal response is `202 AckNoCallback`
+        (report in, signal out). Aggregate events carry metrics only; individual events carry only
+        the fields the policy's dataMinimization permits. For an individual notifiable event
+        needing durable-persistence confirmation, the `200 Ack` Signature header (NFH-007 §5) is the signed receipt.
+      tags: [Observation]
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [context, message]
+              properties:
+                context:
+                  allOf:
+                    - $ref: '#/components/schemas/SygnalContext'
+                    - type: object
+                      properties: { action: { const: sygnal/event/report } }
+                message:
+                  type: object
+                  required: [events]
+                  properties:
+                    policyId: { type: string, description: The CoordinationPolicy (id) under which these events are emitted. }
+                    events:
+                      type: array
+                      minItems: 1
+                      items: { $ref: '#/components/schemas/CoordinationEvent' }
+      responses:
+        '202': { $ref: '#/components/responses/AckNoCallback' }
+        '200': { $ref: '#/components/responses/Ack' }
+        '400': { $ref: '#/components/responses/NackBadRequest' }
+        '401': { $ref: '#/components/responses/NackUnauthorized' }
+        '403': { $ref: '#/components/responses/NackDiscretionary' }
+        '429': { $ref: '#/components/responses/NackTooManyRequests' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /sygnal/policy/update:
+    post:
+      operationId: policyUpdate
+      summary: Push a coordination policy to an edge
+      description: >-
+        Governance pushes a CoordinationPolicy to an edge. Its typed sections set what coordination
+        metadata is emitted and — via dataMinimization — exactly which fields each mode may carry,
+        the coordination SLAs, the operational instrumentation level and (network-wide policies only)
+        the precedence order. This is the only downward verb. The edge confirms adoption via `sygnal/policy/on_update`. The edge MUST verify
+        the sender holds the GOVERNANCE role before applying (else `401` AUT_UNAUTHORIZED_ACTION) — a forged
+        policy could widen what leaves the edge.
+      tags: [Governance]
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [context, message]
+              properties:
+                context:
+                  allOf:
+                    - $ref: '#/components/schemas/SygnalContext'
+                    - type: object
+                      properties: { action: { const: sygnal/policy/update } }
+                message:
+                  $ref: '#/components/schemas/CoordinationPolicy'
+      responses:
+        '200': { $ref: '#/components/responses/Ack' }
+        '202': { $ref: '#/components/responses/AckNoCallback' }
+        '400': { $ref: '#/components/responses/NackBadRequest' }
+        '401': { $ref: '#/components/responses/NackUnauthorized' }
+        '403': { $ref: '#/components/responses/NackDiscretionary' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /sygnal/policy/on_update:
+    post:
+      operationId: policyOnUpdate
+      summary: Confirm adoption of a pushed coordination policy
+      description: >-
+        Sent by the edge back to governance, carrying the CoordinationPolicy with `edgeStatus`
+        (APPLIED, or REJECTED with `edgeStatusReason` — e.g. naming an unrecognised critical
+        section). Correlated by `messageId`.
+      tags: [Governance]
+      parameters:
+        - $ref: '#/components/parameters/CallbackAuthorizationHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [context, message]
+              properties:
+                context:
+                  allOf:
+                    - $ref: '#/components/schemas/SygnalContext'
+                    - type: object
+                      properties: { action: { const: sygnal/policy/on_update } }
+                message:
+                  $ref: '#/components/schemas/CoordinationPolicy'
+      responses:
+        '200': { $ref: '#/components/responses/Ack' }
+        '400': { $ref: '#/components/responses/NackBadRequest' }
+        '401': { $ref: '#/components/responses/NackUnauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /sygnal/plan/sync:
+    post:
+      operationId: planSync
+      summary: Publish or update a shared plan to its participants
+      description: >-
+        Share or update a versioned, multi-party shared plan. Publish-to-shared-reference: only
+        a hashed reference to the full FHIR CarePlan (held at the edge) plus coordination
+        metadata flows. Each subscribed participant acknowledges via `sygnal/plan/on_sync`; a
+        single publish fans out to N pairwise deliveries resolved via the subnet registry.
+      tags: [Coordination]
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [context, message]
+              properties:
+                context:
+                  allOf:
+                    - $ref: '#/components/schemas/SygnalContext'
+                    - type: object
+                      properties: { action: { const: sygnal/plan/sync } }
+                message:
+                  $ref: '#/components/schemas/SharedPlan'
+      responses:
+        '200': { $ref: '#/components/responses/Ack' }
+        '202': { $ref: '#/components/responses/AckNoCallback' }
+        '400': { $ref: '#/components/responses/NackBadRequest' }
+        '401': { $ref: '#/components/responses/NackUnauthorized' }
+        '403': { $ref: '#/components/responses/NackDiscretionary' }
+        '409': { $ref: '#/components/responses/NackConflict' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /sygnal/plan/on_sync:
+    post:
+      operationId: planOnSync
+      summary: Acknowledge a shared-plan sync
+      description: >-
+        Sent by a participant back to the plan owner, carrying the SharedPlan with a
+        `participantStatus` of SYNCED or CONFLICT. On CONFLICT the participant returns its `version` so the owner can
+        reconcile. Correlated by `messageId`.
+      tags: [Coordination]
+      parameters:
+        - $ref: '#/components/parameters/CallbackAuthorizationHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [context, message]
+              properties:
+                context:
+                  allOf:
+                    - $ref: '#/components/schemas/SygnalContext'
+                    - type: object
+                      properties: { action: { const: sygnal/plan/on_sync } }
+                message:
+                  $ref: '#/components/schemas/SharedPlan'
+      responses:
+        '200': { $ref: '#/components/responses/Ack' }
+        '400': { $ref: '#/components/responses/NackBadRequest' }
+        '401': { $ref: '#/components/responses/NackUnauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /sygnal/signal/emit:
+    post:
+      operationId: signalEmit
+      summary: Emit a coordination alert from the Sygnal observation layer to an edge (centre to edge)
+      description: >-
+        The observation layer emits an advisory alert to an edge (follow-up due, SLA breach,
+        unacknowledged referral, coverage gap, suspected outbreak). Completes the observation
+        loop (report is edge->centre; emit is centre->edge). `recommendedAction` is advisory —
+        the edge decides and returns only an `Ack`. Centre-initiated (no preceding request), so it is signed with
+        the standard `Signature`, not a callback signature; the edge MUST verify the sender holds the OBSERVER
+        role (else `401` AUT_UNAUTHORIZED_ACTION).
+      tags: [Observation]
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [context, message]
+              properties:
+                context:
+                  allOf:
+                    - $ref: '#/components/schemas/SygnalContext'
+                    - type: object
+                      properties: { action: { const: sygnal/signal/emit } }
+                message:
+                  $ref: '#/components/schemas/Signal'
+      responses:
+        '200': { $ref: '#/components/responses/Ack' }
+        '400': { $ref: '#/components/responses/NackBadRequest' }
+        '401': { $ref: '#/components/responses/NackUnauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /sygnal/policy/get:
+    post:
+      operationId: policyGet
+      summary: Fetch the coordination policies currently applicable to a scope (status-shaped pull)
+      description: >-
+        A narrow current-state pull (not a search): an edge fetches the CoordinationPolicies that
+        currently apply to it — on bootstrap, or to reconcile after a missed update push. The
+        Query selects by `ref` (policyId), resolving to exactly one policy, or by `scope`, resolving
+        to every policy in that scope's precedence chain (network-wide policies included) so the
+        edge can compute its effective policy. Returned via `sygnal/policy/on_get`.
+      tags: [Read]
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [context, message]
+              properties:
+                context:
+                  allOf:
+                    - $ref: '#/components/schemas/SygnalContext'
+                    - type: object
+                      properties: { action: { const: sygnal/policy/get } }
+                message:
+                  $ref: '#/components/schemas/Query'
+      responses:
+        '200': { $ref: '#/components/responses/Ack' }
+        '400': { $ref: '#/components/responses/NackBadRequest' }
+        '401': { $ref: '#/components/responses/NackUnauthorized' }
+        '403': { $ref: '#/components/responses/NackDiscretionary' }
+        '404': { $ref: '#/components/responses/NackNotFound' }
+        '429': { $ref: '#/components/responses/NackTooManyRequests' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /sygnal/policy/on_get:
+    post:
+      operationId: policyOnGet
+      summary: Return the applicable coordination policies
+      description: >-
+        Carries the policies resolved by the Query: one for a `ref`, or the full applicable set for a
+        `scope`. Correlated by `messageId`. This is a resolution for one edge, not a search, so
+        `Query` remains a single-record selector; `{policies[]}` is a narrow, documented exception to
+        the no-wrapper rule (same precedent as event/report's inline batch).
+      tags: [Read]
+      parameters:
+        - $ref: '#/components/parameters/CallbackAuthorizationHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [context, message]
+              properties:
+                context:
+                  allOf:
+                    - $ref: '#/components/schemas/SygnalContext'
+                    - type: object
+                      properties: { action: { const: sygnal/policy/on_get } }
+                message:
+                  type: object
+                  required: [policies]
+                  additionalProperties: false
+                  properties:
+                    policies:
+                      type: array
+                      minItems: 1
+                      items: { $ref: '#/components/schemas/CoordinationPolicy' }
+      responses:
+        '200': { $ref: '#/components/responses/Ack' }
+        '400': { $ref: '#/components/responses/NackBadRequest' }
+        '401': { $ref: '#/components/responses/NackUnauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /sygnal/deviation/get:
+    post:
+      operationId: deviationGet
+      summary: Fetch a single deviation's current disposition (status-shaped pull)
+      description: >-
+        A narrow current-state pull for reconciliation (e.g. after a missed `on_flag`): the Query
+        selects by `ref` (deviation id, or a transitionRef for the open deviation on a transition).
+        Resolves to a single DeviationReport, returned via `sygnal/deviation/on_get`. Never lists.
+      tags: [Read]
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [context, message]
+              properties:
+                context:
+                  allOf:
+                    - $ref: '#/components/schemas/SygnalContext'
+                    - type: object
+                      properties: { action: { const: sygnal/deviation/get } }
+                message:
+                  $ref: '#/components/schemas/Query'
+      responses:
+        '200': { $ref: '#/components/responses/Ack' }
+        '400': { $ref: '#/components/responses/NackBadRequest' }
+        '401': { $ref: '#/components/responses/NackUnauthorized' }
+        '403': { $ref: '#/components/responses/NackDiscretionary' }
+        '404': { $ref: '#/components/responses/NackNotFound' }
+        '429': { $ref: '#/components/responses/NackTooManyRequests' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /sygnal/deviation/on_get:
+    post:
+      operationId: deviationOnGet
+      summary: Return the queried deviation's current state
+      description: Carries the current DeviationReport for the queried id or transition. Correlated by `messageId`. Returns a single report — never a list.
+      tags: [Read]
+      parameters:
+        - $ref: '#/components/parameters/CallbackAuthorizationHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [context, message]
+              properties:
+                context:
+                  allOf:
+                    - $ref: '#/components/schemas/SygnalContext'
+                    - type: object
+                      properties: { action: { const: sygnal/deviation/on_get } }
+                message:
+                  $ref: '#/components/schemas/DeviationReport'
+      responses:
+        '200': { $ref: '#/components/responses/Ack' }
+        '400': { $ref: '#/components/responses/NackBadRequest' }
+        '401': { $ref: '#/components/responses/NackUnauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /sygnal/plan/get:
+    post:
+      operationId: planGet
+      summary: Fetch the current shared-plan record (status-shaped pull)
+      description: >-
+        A narrow current-state pull for reconciliation (e.g. after a missed `on_sync`): the Query
+        selects by `ref` (planId), optionally with `version`. Resolves to a single SharedPlan,
+        returned via `sygnal/plan/on_get`. Never lists.
+      tags: [Read]
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [context, message]
+              properties:
+                context:
+                  allOf:
+                    - $ref: '#/components/schemas/SygnalContext'
+                    - type: object
+                      properties: { action: { const: sygnal/plan/get } }
+                message:
+                  $ref: '#/components/schemas/Query'
+      responses:
+        '200': { $ref: '#/components/responses/Ack' }
+        '400': { $ref: '#/components/responses/NackBadRequest' }
+        '401': { $ref: '#/components/responses/NackUnauthorized' }
+        '403': { $ref: '#/components/responses/NackDiscretionary' }
+        '404': { $ref: '#/components/responses/NackNotFound' }
+        '429': { $ref: '#/components/responses/NackTooManyRequests' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /sygnal/plan/on_get:
+    post:
+      operationId: planOnGet
+      summary: Return the queried shared-plan record
+      description: Carries the current SharedPlan for the queried planId/version. Correlated by `messageId`. Returns a single record — never a list.
+      tags: [Read]
+      parameters:
+        - $ref: '#/components/parameters/CallbackAuthorizationHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [context, message]
+              properties:
+                context:
+                  allOf:
+                    - $ref: '#/components/schemas/SygnalContext'
+                    - type: object
+                      properties: { action: { const: sygnal/plan/on_get } }
+                message:
+                  $ref: '#/components/schemas/SharedPlan'
+      responses:
+        '200': { $ref: '#/components/responses/Ack' }
+        '400': { $ref: '#/components/responses/NackBadRequest' }
+        '401': { $ref: '#/components/responses/NackUnauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+components:
+
+  parameters:
+    AuthorizationHeader:
+      name: Authorization
+      in: header
+      required: true
+      description: >-
+        Beckn HTTP Signature (NFH-007 §4) on every message that is NOT a solicited callback: all
+        `sygnal/{noun}/{verb}` requests, including the centre-initiated `sygnal/signal/emit`. Signing string:
+        `(created) (expires) digest`. MIRRORS core; SHOULD $ref beckn.yaml in production.
+      schema: { $ref: '#/components/schemas/Signature' }
+    CallbackAuthorizationHeader:
+      name: Authorization
+      in: header
+      required: true
+      description: >-
+        Beckn HTTP Callback Signature (NFH-007 §3.3, §6) on solicited `sygnal/{noun}/on_{verb}` callbacks. The
+        signing string adds `request-signature` (the raw signature of the triggering request), chaining the
+        callback to it. A later, unsolicited `on_*` (e.g. a deviation disposition that changes after the first
+        `on_flag`) is signed with the standard `Signature` instead. MIRRORS core.
+      schema: { $ref: '#/components/schemas/CallbackSignature' }
+
+  headers:
+    AckSignatureHeader:
+      description: >-
+        Beckn HTTP Ack Signature (NFH-007 §3.4, §5), REQUIRED on every synchronous response whatever its status
+        code. Chains the responder's signature to the inbound request's signature, proving authenticated receipt.
+        For an individual notifiable `sygnal/event/report`, this signed header IS the durable receipt. MIRRORS core.
+      required: true
+      schema: { $ref: '#/components/schemas/AckSignature' }
+
+  responses:
+    Ack:
+      description: Authenticated and accepted for processing; the business result (if any) arrives on the paired on_* callback. The Signature header is the signed receipt.
+      headers: { Signature: { $ref: '#/components/headers/AckSignatureHeader' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/Ack' } } }
+    AckNoCallback:
+      description: Received and authenticated; no callback will be produced (the normal response to fire-and-forget sygnal/event/report). The Signature header is the signed receipt.
+      headers: { Signature: { $ref: '#/components/headers/AckSignatureHeader' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/Ack' } } }
+    NackBadRequest:
+      description: Schema validation or precondition failure (SCH_*, CTX_* codes).
+      headers: { Signature: { $ref: '#/components/headers/AckSignatureHeader' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/Nack' } } }
+    NackUnauthorized:
+      description: >-
+        Signature absent, expired or unverifiable against the sender's registry key (AUT_SIGNATURE_*, AUT_KEY_*),
+        OR the authenticated sender lacks the Sygnal role this action requires (AUT_UNAUTHORIZED_ACTION — see the
+        role table in the Sygnal documentation, Concepts > Trust and security).
+      headers: { Signature: { $ref: '#/components/headers/AckSignatureHeader' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/Nack' } } }
+    NackDiscretionary:
+      description: Receiver declined for policy-governed reasons (POL_* codes), e.g. a field not permitted by the active policy's dataMinimization. No callback follows.
+      headers: { Signature: { $ref: '#/components/headers/AckSignatureHeader' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/Nack' } } }
+    NackTooManyRequests:
+      description: Rate limited (AUT_RATE_LIMITED / POL_NP_CAPACITY_EXCEEDED). Back off before retrying.
+      headers: { Signature: { $ref: '#/components/headers/AckSignatureHeader' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/Nack' } } }
+    NackConflict:
+      description: Version conflict on a shared artifact (plan sync).
+      headers: { Signature: { $ref: '#/components/headers/AckSignatureHeader' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/Nack' } } }
+    NackNotFound:
+      description: No matching resource for a get query (the selector resolved to nothing).
+      headers: { Signature: { $ref: '#/components/headers/AckSignatureHeader' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/Nack' } } }
+    ServerError:
+      description: Unexpected server error. Transient; the caller MAY retry after back-off.
+      headers: { Signature: { $ref: '#/components/headers/AckSignatureHeader' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/Nack' } } }
+
+  schemas:
+
+    # ---- Core mirrors (verbatim from canonical beckn.yaml; SHOULD $ref it in production) ----
+
+    RequestDigest:
+      title: Request Payload Digest
+      description: 'A cryptographic binding that ties an asynchronous callback to the specific inbound request
+        that triggered it, establishing bilateral non-repudiation for the asynchronous leg of a Beckn interaction.
+
+
+        RequestDigest appears in the Context of callback requests across all phases of the value-exchange
+        lifecycle. The implementing actor (PN or CN) produces it by hashing the original inbound request body
+        and including that hash in the callback Context; the receiving actor verifies it to confirm that the
+        callback corresponds to the claimed original request.
+
+
+        Verification requires two steps: recomputing the BLAKE2b-512 digest of the original request body and
+        comparing it to the digest field, then confirming that the messageId matches the messageId from the
+        original request Context.
+
+
+        Relationship: Composed within the Context schema via the requestDigest property.'
+      type: object
+      required:
+      - digest
+      properties:
+        digest:
+          type: string
+          pattern: ^BLAKE-512=[A-Za-z0-9+/]+=*$
+          description: 'BLAKE2b-512 hash of the parent request body, Base64-encoded with algorithm prefix.
+
+            Format: `BLAKE-512={base64EncodedHash}`'
+      x-mirrors: beckn.yaml v2.0.0 @ a22300a (NFH-007). SHOULD $ref the canonical file in production.
+    Signature:
+      title: Beckn HTTP Signature
+      description: "A digitally signed authentication credential transmitted in the HTTP Authorization header\
+        \ of CN requests and PN-initiated callbacks, proving the identity of the sending network participant\
+        \ and ensuring the integrity of the request body.\n\nThe sending actor produces this by signing a\
+        \ three-line canonical signing string with its Ed25519 private key registered on the fabric GRR:\n\
+        \n    (created): {unix_timestamp}\n    (expires): {unix_timestamp}\n    digest: BLAKE2b-512={base64_body_hash}\n\
+        \nThe `headers` attribute of the Authorization header MUST be `\"(created) (expires) digest\"`. The\
+        \ `keyId` field identifies the signer using the format `{namespace}/{registry}/{record}|ed25519` (implicit,\
+        \ resolved at GRR) or a full dedi protocol URL followed by `|ed25519` (explicit). The algorithm MUST\
+        \ be `ed25519`. The body digest MUST use BLAKE2b-512 encoded as `BLAKE2b-512={Base64}`.\n\nUsed for:\
+        \ CN→PN requests across all phases of the value-exchange lifecycle; PN→CN PN-initiated callbacks.\
+        \ The receiving actor verifies it against the sender's registered public key. Requests with an absent,\
+        \ expired, or unverifiable Signature MUST be rejected with 401 NackUnauthorized.\n\nFor PN solicited\
+        \ callbacks, use CallbackSignature instead. For synchronous response signing, see components/headers/AckSignatureHeader.\
+        \ See NFH-004 Authentication and Trust for the full specification."
+      type: string
+      pattern: ^Signature keyId="[^"]+",algorithm="ed25519",created="\d+",expires="\d+",headers="\(created\)
+        \(expires\) digest",signature="[A-Za-z0-9+/]+=*"$
+      examples:
+      - Signature keyId="example.ns/gro.example/bap-key-001|ed25519",algorithm="ed25519",created="1714000000",expires="1714000600",headers="(created)
+        (expires) digest",signature="BASE64SIGNATURE=="
+      x-mirrors: beckn.yaml v2.0.0 @ a22300a (NFH-007). SHOULD $ref the canonical file in production.
+    CallbackSignature:
+      title: Beckn HTTP Callback Signature
+      description: "A digitally signed authentication credential transmitted in the HTTP Authorization header\
+        \ of PN solicited callbacks to CN `/on_*` endpoints. Extends the standard Signature by chaining the\
+        \ PN's signature to the CN's original request signature, allowing the CN to verify that the callback\
+        \ is a genuine response to a request it sent.\n\nThe PN produces this by signing a four-line canonical\
+        \ signing string with its Ed25519 private key:\n\n    (created): {unix_timestamp}\n    (expires):\
+        \ {unix_timestamp}\n    digest: BLAKE2b-512={base64_callback_body_hash}\n    request-signature: {cn_raw_base64_signature}\n\
+        \nThe fourth line (`request-signature`) contains the raw Base64 Ed25519 signature value extracted\
+        \ verbatim from the `signature=\"...\"` field of the CN's original `Authorization` header. This binds\
+        \ the callback cryptographically to the triggering request.\n\nThe `headers` attribute MUST be `\"\
+        (created) (expires) digest request-signature\"`. The `keyId` identifies the PN signer. The algorithm\
+        \ MUST be `ed25519`. The body digest covers the callback body using BLAKE2b-512.\n\nUsed for: PN→CN\
+        \ solicited callbacks only. For PN-initiated notifications (no preceding CN request), use the standard\
+        \ Signature schema instead. For synchronous response signing, see components/headers/AckSignatureHeader.\
+        \ See NFH-004 Authentication and Trust §6 for the full callback signing procedure."
+      type: string
+      pattern: ^Signature keyId="[^"]+",algorithm="ed25519",created="\d+",expires="\d+",headers="\(created\)
+        \(expires\) digest request-signature",signature="[A-Za-z0-9+/]+=*"$
+      examples:
+      - Signature keyId="example.ns/gro.example/bpp-key-001|ed25519",algorithm="ed25519",created="1714000060",expires="1714000660",headers="(created)
+        (expires) digest request-signature",signature="BPPSIGNATURE=="
+      x-mirrors: beckn.yaml v2.0.0 @ a22300a (NFH-007). SHOULD $ref the canonical file in production.
+    AckSignature:
+      title: Beckn HTTP Ack Signature
+      description: "A digitally signed authentication credential transmitted in the HTTP `Signature` response\
+        \ header on every synchronous Beckn response, proving that the responding NP received and authenticated\
+        \ the specific inbound request.\n\nThe responding actor produces this by signing a four-line canonical\
+        \ signing string with its Ed25519 private key:\n\n    (created): {unix_timestamp}\n    (expires):\
+        \ {unix_timestamp}\n    digest: BLAKE2b-512={base64_response_body_hash}\n    request-signature: {incoming_request_raw_base64_signature}\n\
+        \nThe fourth line (`request-signature`) contains the raw Base64 Ed25519 signature value extracted\
+        \ verbatim from the `signature=\"...\"` field of the incoming request's `Authorization` header. This\
+        \ binds the Ack cryptographically to the specific signed request that triggered it.\n\nThe `headers`\
+        \ attribute MUST be `\"(created) (expires) digest request-signature\"`. The `keyId` identifies the\
+        \ responding NP. The algorithm MUST be `ed25519`. The body digest covers the response body using BLAKE2b-512.\n\
+        \nUsed for: all synchronous HTTP responses across all Beckn endpoints. For request signing, see Signature.\
+        \ For PN solicited callback signing, see CallbackSignature. See NFH-004 Authentication and Trust §5\
+        \ for the full response signing procedure."
+      type: string
+      pattern: ^Signature keyId="[^"]+",algorithm="ed25519",created="\d+",expires="\d+",headers="\(created\)
+        \(expires\) digest request-signature",signature="[A-Za-z0-9+/]+=*"$
+      examples:
+      - Signature keyId="example.ns/gro.example/bpp-key-001|ed25519",algorithm="ed25519",created="1714000060",expires="1714000660",headers="(created)
+        (expires) digest request-signature",signature="ACKSIGNATURE=="
+      x-mirrors: beckn.yaml v2.0.0 @ a22300a (NFH-007). SHOULD $ref the canonical file in production.
+    Ack:
+      description: 'The synchronous acknowledgement body returned by the implementing actor (PN or CN) for
+        every accepted Beckn request, carrying the processing status and a messageId of the received request.
+
+
+        Ack appears as the response body for every 200 response across all phases of the value-exchange lifecycle.
+        The implementing actor also signs the response digest and returns  the signature of the response payload
+        in the response header synchronously  upon accepting a request; the calling actor verifies the signature
+        to confirm that  its request was authenticated and accepted for asynchronous processing.
+
+
+        Relationship: Extended by the AckNoCallback and NackBadRequest schemas for specific response conditions.'
+      type: object
+      required:
+      - message
+      properties:
+        message:
+          type: object
+          required:
+          - status
+          - messageId
+          properties:
+            status:
+              type: string
+              enum:
+              - ACK
+              - NACK
+              description: ACK if the request was accepted; NACK if rejected.
+            messageId:
+              description: The message id of the request sent in the context, to which this acknowledgement
+                is being returned.
+              type: string
+              format: uuid
+            error:
+              $ref: '#/components/schemas/Error'
+      x-mirrors: beckn.yaml v2.0.0 @ a22300a (NFH-007). SHOULD $ref the canonical file in production.
+    Error:
+      title: Error
+      description: 'A canonical Beckn error returned in NACK responses and asynchronous error callbacks. The
+        topmost (Level 1) Error in any payload MUST carry a code from the canonical Beckn error code enum.
+        The self-referencing details.cause property (Level 2) MAY carry domain-specific or non-canonical error
+        codes from downstream systems, enabling typed error chains across protocol stack layers and network
+        hops.
+
+
+        Error appears in NackBadRequest (400), NackUnauthorized (401), AckNoCallback (202), and AsyncError
+        across all phases of the value-exchange lifecycle. Both PNs and CNs produce errors depending on the
+        direction of the failing call; the counterpart consumes them to determine corrective action.
+
+
+        Relationship: Extended by the AsyncError schema. Composed within the NackBadRequest, NackUnauthorized,
+        AckNoCallback, and ServerError schemas.'
+      type: object
+      required:
+      - code
+      - message
+      properties:
+        code:
+          type: string
+          description: 'Canonical error code. MUST be a value from the ErrorCode enum schema. The prefix indicates
+            the protocol stack layer at which the error originated: CTX_ (context/routing), NET_ (networking),
+            AUT_ (authentication/trust), SCH_ (core/linked data schema), POL_ (policy), BIZ_ (application/business
+            logic), DOM_ (domain-specific).'
+          examples:
+          - SCH_FIELD_NOT_ALLOWED
+        message:
+          type: string
+          description: Human-readable description of the error.
+          examples:
+          - Field 'electronic:invalidField' not found in ElectronicItem schema
+        details:
+          type: object
+          description: Additional structured error details. The well-known key 'path' identifies the failing
+            field. The 'cause' key carries the underlying root-cause Error (self-referencing), enabling typed
+            error chains across protocol stack layers and network hops.
+          properties:
+            path:
+              type: string
+              description: JSONPath expression or field reference that failed validation.
+              examples:
+              - $.message.order.items[0].quantity.count
+            cause:
+              description: Optional Level 2 Error representing the underlying root cause, such as a downstream
+                provider error, registry failure, or domain-specific error (OCPI, FHIR, OCPP). MAY carry non-canonical
+                codes.
+              $ref: '#/components/schemas/Error'
+          additionalProperties: false
+      additionalProperties: false
+      x-mirrors: beckn.yaml v2.0.0 @ a22300a (NFH-007). SHOULD $ref the canonical file in production.
+
+    # ---- Sygnal profile of core components ----
+
+    SygnalContext:
+      type: object
+      description: >-
+        The Sygnal message header. A strict subset of core Beckn v2 `Context` (plus the Sygnal `domain` field),
+        keeping only the direction-neutral identity pair core intends — `senderId` / `receiverId` — and none of
+        the `bapId` / `bppId` / `bapUri` / `bppUri` fields core retains for v1 backward compatibility.
+        `senderId` is always the participant that signed THIS message and `receiverId` the one it is addressed
+        to, so on an `on_*` callback they swap relative to the request (the action says which leg it is). The
+        receiver resolves the sender's verification key from the subnet registry named by `networkId`, using
+        `senderId`, and MUST check that the `keyId` in the `Authorization` header belongs to `senderId`. Addresses:
+        the optional `senderUri` / `receiverUri` (direction-neutral successors of core's bapUri / bppUri), else the
+        participant's registry `url`. Closed: undeclared fields (including bap*/bpp*) are rejected.
+      required: [version, action, networkId, senderId, receiverId, transactionId, messageId, timestamp]
+      properties:
+        version: { type: string, const: '2.0.0', description: Beckn protocol version (as core). }
+        action: { type: string, description: "Flat compound action token mirroring the path, e.g. 'sygnal/deviation/flag'." }
+        domain:
+          type: string
+          description: >-
+            Sygnal profile field (not in core v2 Context). The domain binding of this exchange, e.g.
+            'healthcare:care-coordination'; paths and schema names stay domain-neutral.
+          examples: ['healthcare:care-coordination']
+        networkId:
+          type: string
+          description: The subnet within which this exchange occurs; its registry resolves senderId / receiverId (as core).
+          examples: ['sygnal.moh.example.org/care-net']
+        senderId:
+          type: string
+          description: >-
+            Identifier of the participant that signed this message — its namespace identifier on the subnet
+            registry (or a DID where the network resolves DIDs). Resolves to the sender's keys and callback address.
+        receiverId:
+          type: string
+          description: Identifier of the participant this message is addressed to (same form as senderId).
+        senderUri:
+          type: string
+          format: uri
+          description: >-
+            OPTIONAL. On a request, the address where the sender wants its callback (`on_*`) delivered — the
+            sender may choose it per message (multi-endpoint platforms, failover, test tunnels). If absent, the
+            responder uses the sender's `url` from its registry record on `networkId`. Responders SHOULD refuse a
+            value that is not https, that resolves to a private, loopback or link-local address, or (optionally)
+            whose host is outside the sender's namespace domain. Not yet in core v2 Context (see companion).
+          examples: ['https://edge.phc.d01-central.example.org/sygnal']
+        receiverUri:
+          type: string
+          format: uri
+          description: >-
+            OPTIONAL. The address this message is delivered to. On a solicited `on_*` callback the responder
+            copies the request's `senderUri` here. Precedence: `receiverUri` in the message, else the receiver's
+            registry `url`. A request's own destination always comes from the registry (or a deployment's static
+            route): a sender chooses where its callbacks land, never where its requests land.
+        transactionId:
+          type: string
+          format: uuid
+          description: >-
+            Reuse the Beckn transaction id of the CareTransition this message concerns; otherwise the initiator of
+            the coordination thread mints a fresh UUID. Receivers MUST NOT require it to match an active Beckn
+            contract (NFH-007 §10.3 does not apply to Sygnal actions).
+        messageId:
+          type: string
+          format: uuid
+          description: Unique per request; a solicited on_* callback carries the request's messageId (NFH-007 §10).
+        timestamp: { type: string, format: date-time }
+        ttl: { type: string, description: ISO 8601 duration after `timestamp` during which the message is valid (as core). }
+        requestDigest:
+          $ref: '#/components/schemas/RequestDigest'
+          description: On a solicited on_* callback, the digest of the triggering request body (as core).
+      additionalProperties: false
+      examples:
+        - version: '2.0.0'
+          action: sygnal/signal/emit
+          domain: 'healthcare:care-coordination'
+          networkId: 'sygnal.moh.example.org/care-net'
+          senderId: 'observer.sygnal.moh.example.org'
+          receiverId: 'chw.d01-12.example.org'
+          transactionId: '7f1c2a4e-3b5d-4e6f-8a9b-0c1d2e3f4a5b'
+          messageId: '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d'
+          timestamp: '2026-07-04T08:00:00Z'
+          ttl: PT30S
+
+    Nack:
+      description: >-
+        The NACK body for every non-2xx Sygnal response — the same shape as core's per-status Nack* body schemas
+        (NackBadRequest, NackUnauthorized, …), which are identical apart from their descriptions, collapsed into one.
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: object
+          required: [status, messageId, error]
+          properties:
+            status: { type: string, const: NACK }
+            messageId: { type: string, format: uuid, description: Echoes the messageId of the rejected request. }
+            error: { $ref: '#/components/schemas/Error' }
+      examples:
+        - message:
+            status: NACK
+            messageId: '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d'
+            error: { code: AUT_UNAUTHORIZED_ACTION, message: 'Sender does not hold the GOVERNANCE role required for sygnal/policy/update.' }
+
+    Participant:
+      type: object
+      description: A network participant referenced by its registry namespace identifier (no PII) and its Sygnal role.
+      required: [id]
+      properties:
+        id: { type: string, description: 'Namespace identifier on the subnet registry — the same value as context.senderId / context.receiverId when the participant is a party to the exchange.' }
+        role: { type: string, enum: [SEEKER, PROVIDER, OBSERVER, GOVERNANCE, SUPERVISOR] }
+
+    CodedValue:
+      type: object
+      description: >-
+        A typed, self-describing code, following the Beckn / DHP CodedValue pattern. `@context` resolves the code
+        list (a JSON-LD context whose sibling attributes.yaml defines the allowed `code` values per `@type`),
+        `@type` names the list, `code` is the value, and `display` is the optional label taken from the code list.
+        Receivers validate `code` against the list the `@context` resolves to. Never free text about a person.
+      required: ['@context', '@type', code]
+      properties:
+        '@context': { type: string, format: uri }
+        '@type': { type: string }
+        code: { type: string }
+        display: { type: string }
+      additionalProperties: false
+      examples:
+        - { '@context': 'https://raw.githubusercontent.com/Medtronic-LABS/sygnal/main/codedvalues/context.jsonld', '@type': 'sygnal:CoverageState', code: COVERED, display: Covered }
+
+    HashRef:
+      type: object
+      description: >-
+        A hashed reference to an artifact or subject that stays at the edge. What it points to is given by the
+        field that carries it (planHash, evidenceHash, subjectRef, goalRefs). The hashing scheme (plain vs keyed)
+        is an open design item — see the Sygnal documentation, Reference > Open questions.
+      required: [algorithm, value]
+      properties:
+        algorithm: { type: string, enum: [BLAKE2b-512, SHA-256], default: BLAKE2b-512 }
+        value: { type: string, description: Hash digest; carries no clinical content. }
+      additionalProperties: false
+
+    Attributes:
+      title: Attributes
+      type: object
+      description: >-
+        A JSON-LD aware extensibility container that carries domain-specific attributes for any schema that
+        supports it, enabling domain packs to add structured, semantically typed fields without modifying the
+        core schema. The @context property MUST reference a valid JSON-LD context URI and the @type property
+        MUST identify the domain type being expressed. (Deliberately NOT offered on CoordinationEvent: an
+        extension bag there would bypass dataMinimization.)
+      properties:
+        '@context': { type: string, description: Use case specific JSON-LD context URI }
+        '@type': { type: string, description: JSON-LD type defined within the context }
+      required: ['@context', '@type']
+      additionalProperties: true
+      x-mirrors: beckn.yaml v2.0.0 @ a22300a (NFH-007). SHOULD $ref the canonical file in production.
+
+    # ---- read selector (shared by all get pulls) ----
+
+    Query:
+      type: object
+      description: >-
+        Selector for a get pull (never a filter). Provide `ref` for id-based lookups (deviation id
+        or transitionRef, planId, policyId); or `scope` to resolve the applicable policy. `version`
+        optionally pins a version (plan/policy). At least one of `ref` or `scope` MUST be present.
+      properties:
+        ref: { type: string, description: Resource id or URN to resolve. }
+        scope:
+          type: object
+          properties:
+            jurisdiction: { type: string }
+            program: { type: string }
+            facility: { type: string }
+        version: { type: string }
+      anyOf:
+        - required: [ref]
+        - required: [scope]
+      additionalProperties: false
+      examples: [{ ref: 'plan:patient-9f2:integrated', version: '7' }]
+
+    # ---- deviation (verb: flag) ----
+
+    DeviationReport:
+      type: object
+      x-fhir-resource: DetectedIssue
+      x-fhir-note: 'Provisional binding — confirm DetectedIssue fit before locking.'
+      description: >-
+        A flagged discrepancy between counter-parties, or a third-party-asserted discrepancy, in a coordination
+        event. Status is split by who sets it: `reporterStatus` belongs to the reporter; `respondentStatus` to the
+        party that disposes of the flag (the flagged counter-party, or the centre in THIRD_PARTY mode).
+        An SLA breach is reported with deviationType SLA_BREACH against the policy's SlaRule.
+      required: ['@type', mode, deviationType, transitionRef, reportedBy, reporterStatus]
+      properties:
+        '@context': { type: string, format: uri, description: JSON-LD context URI (placeholder https://spec.sygnal.network/contexts/v0.9.jsonld). }
+        '@type': { type: string, const: 'sygnal:DeviationReport' }
+        id: { type: string, format: uuid }
+        mode:
+          type: string
+          description: COUNTER_PARTY = both sides independently attested and disagree; THIRD_PARTY = an observer (e.g. supervisor) asserts a discrepancy.
+          enum: [COUNTER_PARTY, THIRD_PARTY]
+        deviationType:
+          type: string
+          enum: [NOT_RECEIVED, NOT_ACCEPTED, COVERAGE_MISMATCH, ATTESTATION_MISMATCH, SLA_BREACH, OTHER]
+        transitionRef: { type: string, description: Reference to the CareTransition / Beckn Contract id the deviation is about. }
+        reportedBy: { $ref: '#/components/schemas/Participant' }
+        against: { $ref: '#/components/schemas/Participant' }
+        expectedState:
+          $ref: '#/components/schemas/CodedValue'
+          description: The state the reporter expected, as a coded value (e.g. a referral lifecycle state, or sygnal:CoverageState COVERED).
+        observedState:
+          $ref: '#/components/schemas/CodedValue'
+          description: The state the reporter observed, as a coded value from the same code list as expectedState.
+        evidenceHash: { $ref: '#/components/schemas/HashRef' }
+        severity: { type: string, enum: [LOW, MEDIUM, HIGH] }
+        reporterStatus:
+          type: string
+          description: >-
+            Set by the reporter. OPEN when raised; WITHDRAWN if the reporter retracts it; CLOSED when the
+            reporter accepts the respondent's resolution.
+          enum: [OPEN, WITHDRAWN, CLOSED]
+        reporterStatusReason:
+          $ref: '#/components/schemas/CodedValue'
+          description: Coded reason for reporterStatus (e.g. sygnal:DeviationStatusReason). Coded only; any human note stays at the edge.
+        respondentStatus:
+          type: string
+          description: Set by the respondent on sygnal/deviation/on_flag (and on any later, unsolicited on_flag).
+          enum: [ACKNOWLEDGED, RESOLVED, DISPUTED]
+        respondentStatusReason:
+          $ref: '#/components/schemas/CodedValue'
+          description: Coded reason for respondentStatus (e.g. sygnal:DeviationStatusReason). Coded only; any human note stays at the edge.
+        reportedAt: { type: string, format: date-time }
+        deviationAttributes: { $ref: '#/components/schemas/Attributes' }
+      additionalProperties: false
+      examples:
+        - '@type': 'sygnal:DeviationReport'
+          mode: THIRD_PARTY
+          deviationType: COVERAGE_MISMATCH
+          transitionRef: 'contract:campaign-d01-2026:hh-4821'
+          reportedBy: { id: 'supervisor.d01-district.example.org', role: SUPERVISOR }
+          against: { id: 'chw.d01-12.example.org', role: PROVIDER }
+          expectedState: { '@context': 'https://raw.githubusercontent.com/Medtronic-LABS/sygnal/main/codedvalues/context.jsonld', '@type': 'sygnal:CoverageState', code: COVERED }
+          observedState: { '@context': 'https://raw.githubusercontent.com/Medtronic-LABS/sygnal/main/codedvalues/context.jsonld', '@type': 'sygnal:CoverageState', code: MISSED }
+          severity: MEDIUM
+          reporterStatus: OPEN
+          reportedAt: '2026-07-01T09:15:00Z'
+
+    # ---- event (verb: report) ----
+
+    CoordinationEvent:
+      type: object
+      x-fhir-resource: AuditEvent
+      description: >-
+        A coordination metadata signal. AGGREGATE events carry metrics only, for a stated `period` and `area`,
+        using metric codes defined by the active policy; a report with the same `id` and a higher `revision`
+        replaces the earlier one (late corrections from edges that were offline are not double counted).
+        INDIVIDUAL events carry a hashed subjectRef and, only where the active policy's dataMinimization permits
+        (notifiable carve-out), a bounded caseDetail — never open clinical content.
+      required: ['@type', eventType, occurredAt]
+      properties:
+        '@context': { type: string, format: uri, description: JSON-LD context URI (placeholder https://spec.sygnal.network/contexts/v0.9.jsonld). }
+        '@type': { type: string, const: 'sygnal:CoordinationEvent' }
+        id: { type: string, format: uuid, description: "Stable event identifier. Required for AGGREGATE events, where it identifies the report across revisions." }
+        revision:
+          type: integer
+          minimum: 1
+          default: 1
+          description: Revision of the report identified by `id`; a higher revision replaces the earlier one.
+        eventType:
+          type: string
+          enum: [TRANSITION_PLACED, TRANSITION_ACCEPTED, TRANSITION_DECLINED, TRANSITION_COMPLETED, DELIVERY_RECORDED, DEVIATION_RAISED, COVERAGE_REPORTED, SYNDROMIC_SIGNAL, NOTIFIABLE_CASE]
+        granularity:
+          type: string
+          enum: [AGGREGATE, INDIVIDUAL]
+          description: Per the active reporting policy. INDIVIDUAL permitted only where policy allows (notifiable conditions).
+        period:
+          type: string
+          pattern: '^[^/\s]+/[^/\s]+$'
+          description: >-
+            ISO 8601 time interval the figures cover, e.g. '2026-06-24T00:00:00Z/2026-07-01T00:00:00Z'. Required for
+            AGGREGATE events and SHOULD match the policy's `cadence`; for aggregates, `occurredAt` is the period end.
+          examples: ['2026-06-24T00:00:00Z/2026-07-01T00:00:00Z']
+        area:
+          $ref: '#/components/schemas/Area'
+          description: The geographic unit the figures cover (AGGREGATE events).
+        subjectRef:
+          $ref: '#/components/schemas/HashRef'
+          description: Hashed subject reference for INDIVIDUAL granularity; omitted for AGGREGATE.
+        subjectType:
+          type: string
+          enum: [PATIENT, HOUSEHOLD]
+          description: What subjectRef identifies. Present if and only if subjectRef is present.
+        caseDetail:
+          type: object
+          description: >-
+            GOVERNED EXCEPTION. Permitted ONLY under a policy whose dataMinimization enables individual reporting
+            for the relevant notifiable condition, limited to the fields selected by that policy's
+            individual.allowedFields (JSONPath) — the country-set triage set. Omitted for AGGREGATE events.
+            Bounded by design — no open bag.
+          additionalProperties: false
+          properties:
+            condition: { type: string, description: Notifiable condition code (must be in the policy's appliesToConditions). }
+            onsetDate: { type: string, format: date }
+            area:
+              $ref: '#/components/schemas/Area'
+              description: Geographic unit for response, at the level the policy permits.
+        from: { $ref: '#/components/schemas/Participant' }
+        to: { $ref: '#/components/schemas/Participant' }
+        occurredAt: { type: string, format: date-time }
+        metrics:
+          type: object
+          description: >-
+            For AGGREGATE events — counts only, no identifiers. Keys MUST be metric codes defined by the active
+            policy's ReportingSection.metricDefinitions (an unknown code is refused with 403 NackDiscretionary).
+            Rates are never reported: send numerator and denominator as two counts so the centre can re-aggregate.
+            A value below dataMinimization.aggregate.minCellSize MUST be suppressed (omitted) or rolled up to a
+            coarser area or longer period before emission.
+          propertyNames: { pattern: '^[a-z][A-Za-z0-9_.]*$' }
+          additionalProperties: { type: number }
+      dependentRequired: { subjectRef: [subjectType], subjectType: [subjectRef] }
+      if:
+        required: [granularity]
+        properties: { granularity: { const: AGGREGATE } }
+      then:
+        required: [id, period]
+      additionalProperties: false
+      examples:
+        - '@type': 'sygnal:CoordinationEvent'
+          id: '3e9b7c1a-5d2f-4a8e-9b6c-1f0e2d3c4b5a'
+          revision: 1
+          eventType: COVERAGE_REPORTED
+          granularity: AGGREGATE
+          period: '2026-06-24T00:00:00Z/2026-07-01T00:00:00Z'
+          area: { code: 'XX-D01-12', level: subdistrict }
+          from: { id: 'hcm.moh.example.org', role: PROVIDER }
+          occurredAt: '2026-07-01T00:00:00Z'
+          metrics: { householdsReached: 1840, householdsTargeted: 2000 }
+
+    Area:
+      type: object
+      description: >-
+        A geographic unit identified by a code from a governance-named code list (e.g. a national
+        administrative-unit gazetteer) — codes only, never free text or coordinates. The level used is set by
+        policy; finer levels raise re-identification risk (see minCellSize).
+      required: [code, level]
+      properties:
+        code: { type: string, description: Code of the unit in the code system. }
+        level: { type: string, description: "Administrative level of the unit as named by the code system, e.g. 'district', 'subdistrict'." }
+        system: { type: string, format: uri, description: URI of the code list; defaults to the active ReportingSection's areaCodeSystem. }
+      additionalProperties: false
+      examples: [{ code: 'XX-D01-12', level: subdistrict }]
+
+    # ---- policy (verb: update) ----
+
+    CoordinationPolicy:
+      type: object
+      x-fhir-resource: none
+      x-fhir-note: 'No clinical FHIR noun; Sygnal-native config (Definition pattern, PlanDefinition-like).'
+      description: >-
+        Governance-issued, signed configuration, organised as typed `sections`. Core section types:
+        ReportingSection (what may leave the edge — its `dataMinimization` is the single source of truth),
+        SlaSection (coordination SLAs), InstrumentationSection (operational telemetry detail) and
+        PrecedenceSection (network-declared precedence; network-wide policies only). Networks may add their own
+        section types (ExtensionSection) through an extension pack. An edge ignores a section whose `@type` it
+        does not recognise unless that section is `critical: true`, in which case it rejects the whole policy
+        (`edgeStatus: REJECTED`, `edgeStatusReason` naming the type). When several policies apply they are
+        resolved per the network's PrecedenceSection (default MOST_SPECIFIC), ties broken by `version` then
+        `effectiveFrom`; whatever the declared order, dataMinimization always merges to the MOST RESTRICTIVE
+        result (allow-lists intersect, subjectRefPermitted is ANDed, the larger minCellSize wins) — a lower level
+        can narrow what leaves the edge, never widen it. How a policy is authored and approved is
+        governance-internal and out of scope; the protocol fixes the artefact, its signing by a GOVERNANCE-role
+        participant, versioning, scope, precedence and distribution.
+      required: ['@type', id, version, sections]
+      properties:
+        '@context': { type: string, format: uri, description: JSON-LD context URI (placeholder https://spec.sygnal.network/contexts/v0.9.jsonld). }
+        '@type': { type: string, const: 'sygnal:CoordinationPolicy' }
+        id: { type: string }
+        version: { type: string, description: Orders versions of the same policy id. }
+        effectiveFrom: { type: string, format: date-time }
+        scope:
+          type: object
+          description: What the policy applies to. Omitted for a network-wide policy.
+          properties:
+            jurisdiction: { type: string }
+            program: { type: string }
+            facility: { type: string }
+        supersedes: { type: string, description: "The policy this one replaces, as 'id@version'." }
+        issuerStatus:
+          type: string
+          description: Set by GOVERNANCE. DRAFT (not in force), ACTIVE, RETIRED.
+          enum: [DRAFT, ACTIVE, RETIRED]
+        edgeStatus:
+          type: string
+          description: Set by the edge on sygnal/policy/on_update.
+          enum: [APPLIED, REJECTED]
+        edgeStatusReason: { type: string, description: "The edge's reason, e.g. naming an unrecognised critical section." }
+        sections:
+          type: array
+          minItems: 1
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/ReportingSection'
+              - $ref: '#/components/schemas/SlaSection'
+              - $ref: '#/components/schemas/InstrumentationSection'
+              - $ref: '#/components/schemas/PrecedenceSection'
+              - $ref: '#/components/schemas/ExtensionSection'
+        policyAttributes: { $ref: '#/components/schemas/Attributes' }
+      if:
+        required: [sections]
+        properties:
+          sections:
+            contains:
+              type: object
+              required: ['@type']
+              properties: { '@type': { const: 'sygnal:PrecedenceSection' } }
+      then:
+        not: { required: [scope] }
+      additionalProperties: false
+      examples:
+        - '@type': 'sygnal:CoordinationPolicy'
+          id: 'policy:moh:d01-coverage'
+          version: '2026.07'
+          effectiveFrom: '2026-07-01T00:00:00Z'
+          scope: { jurisdiction: 'XX-D01', program: 'campaign-d01-2026' }
+          issuerStatus: ACTIVE
+          sections:
+            - '@type': 'sygnal:ReportingSection'
+              reportingMode: INDIVIDUAL_NOTIFIABLE_PLUS_AGGREGATE
+              eventTypes: [COVERAGE_REPORTED, NOTIFIABLE_CASE, TRANSITION_COMPLETED]
+              cadence: P1W
+              areaCodeSystem: 'https://codes.example.org/admin-units'
+              metricDefinitions:
+                - { code: householdsReached, kind: COUNT, unit: '{household}', description: Households visited and served in the period. }
+                - { code: householdsTargeted, kind: COUNT, unit: '{household}', description: Households in the campaign target list. }
+              dataMinimization:
+                aggregate: { allowedFields: ['$.metrics'], subjectRefPermitted: false, minCellSize: 5 }
+                individual:
+                  appliesToConditions: [tuberculosis, measles, cholera]
+                  allowedFields: ['$.caseDetail.condition', '$.caseDetail.onsetDate', '$.caseDetail.area']
+                  subjectRefPermitted: true
+                  legalBasis: 'Public Health (Notifiable Diseases) Regulations (example)'
+            - '@type': 'sygnal:SlaSection'
+              rules:
+                - id: 'sla:referral:high-risk-phc-dh'
+                  appliesTo: { transitionType: referral, urgency: HIGH, fromTier: PHC, toTier: DH }
+                  start: { action: confirm }
+                  stop: { action: on_status, state: ACCEPTED }
+                  window: PT2H
+                  expectingRole: SEEKER
+                  onBreach: { escalationTier: 1 }
+            - '@type': 'sygnal:InstrumentationSection'
+              level: AGGREGATE
+        - '@type': 'sygnal:CoordinationPolicy'
+          id: 'policy:moh:network'
+          version: '2026.07'
+          issuerStatus: ACTIVE
+          sections:
+            - '@type': 'sygnal:PrecedenceSection'
+              levels: [network, jurisdiction, program, facility]
+              resolution: { 'sygnal:SlaSection': MOST_SPECIFIC, 'sygnal:InstrumentationSection': HIGHEST_AUTHORITY }
+              locked: ['$.sections[*].dataMinimization.individual.legalBasis']
+              environment: PRODUCTION
+            - '@context': 'https://ext.example.org/contexts/moh.jsonld'
+              '@type': 'exmoh:CampaignCalendar'
+              critical: false
+              blackoutDates: ['2026-12-25']
+
+    ReportingSection:
+      type: object
+      description: What coordination metadata the edge emits, and exactly which fields may leave it.
+      required: ['@type', dataMinimization]
+      properties:
+        '@type': { type: string, const: 'sygnal:ReportingSection' }
+        critical: { type: boolean, default: false }
+        reportingMode:
+          type: string
+          description: >-
+            Optional human-readable summary, derived from dataMinimization and required to agree with it:
+            AGGREGATE_ONLY when individual.appliesToConditions is empty or absent, otherwise
+            INDIVIDUAL_NOTIFIABLE_PLUS_AGGREGATE. (Operational telemetry detail is a separate setting — see
+            InstrumentationSection.)
+          enum: [AGGREGATE_ONLY, INDIVIDUAL_NOTIFIABLE_PLUS_AGGREGATE]
+        eventTypes:
+          type: array
+          description: Event types the edge MUST emit under this policy.
+          items: { type: string }
+        cadence: { type: string, description: ISO 8601 duration for aggregate reporting cadence. }
+        areaCodeSystem: { type: string, format: uri, description: URI of the code list Area codes are drawn from (the default for Area.system). }
+        metricDefinitions:
+          type: array
+          description: The only metric codes an AGGREGATE event may carry under this policy.
+          items: { $ref: '#/components/schemas/MetricDefinition' }
+        dataMinimization:
+          type: object
+          description: >-
+            The governed boundary of "clinical data stays at the edge" — per-mode field permissions and
+            the authoritative granularity control. Each `allowedFields` entry is a JSONPath (RFC 9535)
+            expression evaluated by the EDGE against each CoordinationEvent it emits; together they select
+            the only optional fields that may be present. Always permitted, and not listed: '@context',
+            '@type', id, revision, eventType, granularity, period, area, occurredAt, from, to.
+            subjectRef/subjectType are governed by subjectRefPermitted. A report carrying anything else MUST be
+            refused (403 NackDiscretionary). The centre never evaluates queries — the expressions travel
+            governance -> edge. Merging across policies is always most-restrictive (see CoordinationPolicy).
+          required: [aggregate, individual]
+          additionalProperties: false
+          properties:
+            aggregate:
+              type: object
+              additionalProperties: false
+              properties:
+                allowedFields: { type: array, items: { type: string, pattern: '^\$' }, default: ['$.metrics'], description: JSONPath expressions (RFC 9535). }
+                subjectRefPermitted: { type: boolean, default: false }
+                minCellSize:
+                  type: integer
+                  minimum: 2
+                  description: >-
+                    Small-cell threshold (recommended 5). The edge suppresses (omits) any metric value below it, or rolls
+                    it up to a coarser area or longer period, and SHOULD also suppress a second value where the hidden
+                    one could otherwise be recovered by subtraction from totals.
+            individual:
+              type: object
+              additionalProperties: false
+              properties:
+                appliesToConditions:
+                  type: array
+                  items: { type: string }
+                  description: Notifiable conditions this individual-reporting carve-out applies to.
+                allowedFields:
+                  type: array
+                  items: { type: string, pattern: '^\$' }
+                  description: >-
+                    Bounded allow-list, as JSONPath expressions (RFC 9535), of the caseDetail fields permitted for
+                    these conditions, e.g. '$.caseDetail.condition' — the country-set triage set. Anything not
+                    selected MUST NOT be emitted.
+                subjectRefPermitted: { type: boolean, default: true }
+                legalBasis: { type: string, description: Reference to the surveillance mandate authorising this carve-out. }
+      additionalProperties: false
+
+    MetricDefinition:
+      type: object
+      description: A metric code an AGGREGATE CoordinationEvent may carry, and how it combines across areas and periods.
+      required: [code, kind]
+      properties:
+        code: { type: string, pattern: '^[a-z][A-Za-z0-9_.]*$' }
+        kind:
+          type: string
+          description: How values combine across areas/periods. Rates are not a kind — report numerator and denominator as two COUNTs.
+          enum: [COUNT, SUM, MIN, MAX]
+        unit: { type: string, description: "UCUM unit where applicable, e.g. 'h', or an annotation such as '{household}'." }
+        description: { type: string }
+      additionalProperties: false
+
+    SlaSection:
+      type: object
+      description: >-
+        Coordination SLAs — the single definition read by edge SLA timers, `deviation/flag` (deviationType
+        SLA_BREACH), the centre's SLA_BREACH / UNACKNOWLEDGED_REFERRAL signals, and network telemetry.
+      required: ['@type', rules]
+      properties:
+        '@type': { type: string, const: 'sygnal:SlaSection' }
+        critical: { type: boolean, default: false }
+        rules:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/SlaRule' }
+      additionalProperties: false
+
+    SlaRule:
+      type: object
+      description: One coordination SLA. Breach handling is advisory — the centre observes and signals, never decides.
+      required: [id, start, stop, window, expectingRole]
+      properties:
+        id: { type: string }
+        appliesTo:
+          type: object
+          description: Optional matchers; every matcher present must match. None present = applies to all transitions.
+          properties:
+            transitionType: { type: string }
+            urgency: { type: string }
+            fromTier: { type: string }
+            toTier: { type: string }
+          additionalProperties: false
+        start:
+          type: object
+          required: [action]
+          properties:
+            action: { type: string, description: "The message that starts the clock, e.g. 'confirm'." }
+          additionalProperties: false
+        stop:
+          type: object
+          required: [action]
+          properties:
+            action: { type: string, description: "The message that stops the clock, e.g. 'on_status'." }
+            state: { type: string, description: "Optional state that message must carry, e.g. 'ACCEPTED'." }
+          additionalProperties: false
+        window: { type: string, pattern: '^P', description: "ISO 8601 duration, e.g. 'PT2H'." }
+        expectingRole:
+          type: string
+          description: Role of the waiting party, which raises deviation/flag on breach (the counter-party principle).
+          enum: [SEEKER, PROVIDER, OBSERVER, GOVERNANCE, SUPERVISOR]
+        onBreach:
+          type: object
+          properties:
+            escalationTier:
+              type: integer
+              enum: [1, 2, 3]
+              description: Escalation tier (1 structured inquiry, 2 human escalation, 3 governance alert). Advisory.
+          additionalProperties: false
+      additionalProperties: false
+
+    InstrumentationSection:
+      type: object
+      description: >-
+        How much OPERATIONAL detail participants' adapters report about the exchanges themselves — never clinical
+        content, never payloads. OFF: liveness only. AGGREGATE: counts, latencies, ACK/NACK, timeouts and SLA
+        breaches per action, participant and window. EXCEPTIONS: AGGREGATE plus one record per NACK, timeout or
+        SLA breach. PER_TRANSACTION: one record per exchange, for debugging; valid only on a network whose
+        PrecedenceSection declares environment NON_PRODUCTION, and only until `until`. Records carry ONLY:
+        transactionId, messageId, action, senderId, receiverId, outcome (ACK, NACK, TIMEOUT, ERROR), errorCode and
+        the sent / ack / callback timestamps; networks cannot widen this list. transactionId and messageId MUST be
+        random UUIDs, never derived from a subject identifier. Carried on the network telemetry channel (OTLP in
+        the reference edge kit), not on event/report.
+      required: ['@type', level]
+      properties:
+        '@type': { type: string, const: 'sygnal:InstrumentationSection' }
+        critical: { type: boolean, default: false }
+        level: { type: string, enum: ['OFF', AGGREGATE, EXCEPTIONS, PER_TRANSACTION] }
+        until: { type: string, format: date-time, description: "Required for PER_TRANSACTION; after it, the next applicable policy's level applies." }
+      if:
+        required: [level]
+        properties: { level: { const: PER_TRANSACTION } }
+      then:
+        required: [until]
+      additionalProperties: false
+
+    PrecedenceSection:
+      type: object
+      description: >-
+        The network's declared precedence order. Allowed only in a network-wide policy (one with no scope), issued
+        by GOVERNANCE. If absent, every section type resolves MOST_SPECIFIC. Never overrides the dataMinimization
+        most-restrictive invariant.
+      required: ['@type', levels]
+      properties:
+        '@type': { type: string, const: 'sygnal:PrecedenceSection' }
+        critical: { type: boolean, default: false }
+        levels:
+          type: array
+          description: Scope levels, highest authority first.
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, enum: [network, jurisdiction, program, facility] }
+        resolution:
+          type: object
+          description: How overlapping policies resolve, per section @type. Default MOST_SPECIFIC.
+          propertyNames: { pattern: '^[A-Za-z][A-Za-z0-9_-]*:[A-Za-z][A-Za-z0-9_]*$' }
+          additionalProperties: { type: string, enum: [MOST_SPECIFIC, HIGHEST_AUTHORITY] }
+        locked:
+          type: array
+          description: JSONPath (RFC 9535) of policy fields that lower levels may not override.
+          items: { type: string, pattern: '^\$' }
+        environment:
+          type: string
+          description: PER_TRANSACTION instrumentation is valid only on NON_PRODUCTION networks.
+          enum: [PRODUCTION, NON_PRODUCTION]
+          default: PRODUCTION
+      additionalProperties: false
+
+    ExtensionSection:
+      type: object
+      description: >-
+        A network-defined section type introduced through an extension pack. `@type` is a prefixed term outside
+        the `sygnal:` namespace. Edges that do not recognise it ignore it, unless `critical: true`.
+      required: ['@context', '@type']
+      properties:
+        '@context': { type: string, format: uri }
+        '@type': { type: string, pattern: '^(?!sygnal:)[A-Za-z][A-Za-z0-9_-]*:[A-Za-z][A-Za-z0-9_]*$' }
+        critical: { type: boolean, default: false }
+      additionalProperties: true
+
+    # ---- plan (verb: sync) ----
+
+    SharedPlan:
+      type: object
+      x-fhir-resource: CarePlan
+      x-fhir-note: 'Only a hashed reference to the full FHIR CarePlan (held at the edge) flows; never the plan content.'
+      description: A versioned, multi-party shared-plan record (publish-to-shared-reference). The full FHIR CarePlan stays at the edge; only its hash and coordination metadata flow.
+      required: ['@type', planId, version, planHash, changeType]
+      properties:
+        '@context': { type: string, format: uri, description: JSON-LD context URI (placeholder https://spec.sygnal.network/contexts/v0.9.jsonld). }
+        '@type': { type: string, const: 'sygnal:SharedPlan' }
+        planId: { type: string }
+        version: { type: string, description: Monotonic version or version-vector for conflict detection. }
+        planHash:
+          $ref: '#/components/schemas/HashRef'
+          description: Hash of the full FHIR CarePlan held at the owning edge.
+        owner: { $ref: '#/components/schemas/Participant' }
+        participants:
+          type: array
+          description: All parties subscribed to this plan (may exceed two).
+          items: { $ref: '#/components/schemas/Participant' }
+        changeType: { type: string, enum: [CREATED, UPDATED, CLOSED] }
+        goalRefs:
+          type: array
+          items: { $ref: '#/components/schemas/HashRef' }
+        participantStatus:
+          type: string
+          description: Set by a participant on sygnal/plan/on_sync. (The owner's action is `changeType`.)
+          enum: [SYNCED, CONFLICT]
+        lastUpdated: { type: string, format: date-time }
+        planAttributes: { $ref: '#/components/schemas/Attributes' }
+      additionalProperties: false
+      examples:
+        - '@type': 'sygnal:SharedPlan'
+          planId: 'plan:patient-9f2:integrated'
+          version: '7'
+          planHash: { algorithm: BLAKE2b-512, value: 'b2:9af1...c3' }
+          owner: { id: 'phc.d01-central.example.org', role: PROVIDER }
+          participants:
+            - { id: 'chw2.d01-12.example.org', role: PROVIDER }
+            - { id: 'art-centre.d01.example.org', role: PROVIDER }
+            - { id: 'anc-clinic.d01.example.org', role: PROVIDER }
+          changeType: UPDATED
+          lastUpdated: '2026-07-01T12:00:00Z'
+
+    # ---- signal (verb: emit) ----
+
+    Signal:
+      type: object
+      x-fhir-resource: Communication
+      x-fhir-note: 'Coordination alert conveyed to a provider; carries no clinical content.'
+      description: An advisory coordination alert emitted from the Sygnal observation layer to an edge. Advisory only — never a directive.
+      required: ['@type', signalType, issuedAt]
+      properties:
+        '@context': { type: string, format: uri, description: JSON-LD context URI (placeholder https://spec.sygnal.network/contexts/v0.9.jsonld). }
+        '@type': { type: string, const: 'sygnal:Signal' }
+        id: { type: string, format: uuid }
+        signalType:
+          type: string
+          enum: [FOLLOW_UP_DUE, SLA_BREACH, UNACKNOWLEDGED_REFERRAL, COVERAGE_GAP, OUTBREAK_SUSPECTED]
+        relatesTo: { type: string, description: CareTransition / plan / area reference the signal concerns. }
+        target: { $ref: '#/components/schemas/Participant' }
+        severity: { type: string, enum: [INFO, WARNING, CRITICAL] }
+        basis: { type: string, description: What observation triggered the signal (e.g. 'no on_confirm acceptance within SLA'). }
+        recommendedAction: { type: string, description: ADVISORY suggestion only. The edge decides; Sygnal never dictates a response. }
+        issuedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        signalAttributes: { $ref: '#/components/schemas/Attributes' }
+      additionalProperties: false
+      examples:
+        - '@type': 'sygnal:Signal'
+          signalType: FOLLOW_UP_DUE
+          relatesTo: 'contract:campaign-d01-2026:hh-4821'
+          target: { id: 'chw.d01-12.example.org', role: PROVIDER }
+          severity: WARNING
+          basis: 'no on_confirm acceptance within 72h SLA'
+          recommendedAction: 'Visit household to complete routine-care enrolment.'
+          issuedAt: '2026-07-04T08:00:00Z'

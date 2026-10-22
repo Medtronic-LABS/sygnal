@@ -1,0 +1,15 @@
+Sygnal specification and documentation
+Copyright (c) 2026 Medtronic LABS
+
+Licensed under the Creative Commons Attribution-ShareAlike 4.0 International
+License (CC BY-SA 4.0). You may share and adapt this material, including for
+commercial purposes, provided you give appropriate credit, indicate if changes
+were made, and distribute any adaptations under the same licence.
+
+Full legal code: https://creativecommons.org/licenses/by-sa/4.0/legalcode
+
+SPDX-License-Identifier: CC-BY-SA-4.0
+
+Scope: the contents of docs/, specs/sygnal-coordination-apis.yaml, schemas/,
+codedvalues/ and reference-flows/. The licence for software in this repository
+(for example specs/tools/validate.py) is still to be decided.

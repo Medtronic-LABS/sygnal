@@ -1,0 +1,7 @@
+.DS_Store
+__pycache__/
+*.pyc
+*.tmp
+
+# local working notes (not checked in)
+TODO.md

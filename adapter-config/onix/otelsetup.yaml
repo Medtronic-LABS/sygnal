@@ -1,0 +1,21 @@
+# Sygnal network: telemetry block for an ONIX adapter.
+#
+# Add this at the top level of EACH adapter config (seeker and provider), as a
+# sibling of appName, log, http and modules. If the file already has a top-level
+# `plugins:` key, add `otelsetup:` under it instead of creating a second one.
+# Replace the <...> placeholders with the values your network operator gives you.
+plugins:
+  otelsetup:
+    id: otelsetup
+    config:
+      serviceName: "<your-subscriber-id>-bap"      # use -bpp in the provider config; identifies your adapter on the dashboards
+      serviceVersion: "<adapter-version>"
+      environment: "<network-id>"
+      domain: "healthcare:care-coordination"
+      otlpEndpoint: "<network-collector-host>:443"  # OTLP/gRPC over TLS; use the host name, not an IP.
+                                                     # Sygnal Sandbox: you get this address when you join (hello@sygnal.network).
+      enableLogs: "true"                            # audit records: the only signal collected
+      enableMetrics: "false"
+      enableTracing: "false"
+      auditFieldsConfig: "/app/config/audit-fields.yaml"   # a local file, never a URL (see README)
+      cacheTTL: "3600"

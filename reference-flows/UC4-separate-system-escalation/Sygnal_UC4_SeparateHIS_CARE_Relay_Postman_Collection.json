@@ -1,0 +1,857 @@
+{
+  "info": {
+    "name": "Sygnal — UC4 Separate-HIS Escalation to CARE (T1 HCM→ComEMR, T2 ComEMR→CARE)",
+    "_postman_id": "d9f1a39f-0af4-516f-ad68-bd49080fde8f",
+    "description": "### Quick-start: environment setup\n\n1. Import this use case's **`*_Dev.postman_environment.json`** (in the same\n   `reference-flows/` folder) into Postman (Environments → Import). Each use case\n   ships a self-contained environment — Postman allows only one active environment\n   at a time, so per-UC envs avoid one ever-growing shared file.\n2. Select that environment from the picker.\n3. Set `bpp_uri`, `bap_uri`, and `auth_token` for your sandbox. `bpp_uri` is the target\n   base URL and switches by transaction (ComEMR for T1, HCM for UC3, CARE for UC4-T2).\n4. `network_id` is `example.net/health` (STUB) — confirm with the registry team.\n5. Subscriber IDs (`hcm_np_id`, `comemr_np_id`, `care_np_id`) and all keys are STUBBED.\n\n**Envelope note:** `context.version` is `2.0.0` — the Beckn *core message* version (a\nconst in beckn.yaml). The domain schema packs (HealthReferral / ServiceCoordination)\nare v2.1; that shows up in the `@context` URLs, not the envelope.\n\n## Sygnal — UC4 · Separate-HIS Escalation to CARE\n\n**Scenario:** Same upward fever referral as UC1, but the escalation PHU runs a **separate\nsystem (CARE)**. ComEMR — already the care coordinator — initiates a genuine second\non-network transaction to CARE and relays progress back to DIGIT HCM.\n\n**Transactions:**\n- **T1 = DIGIT HCM → ComEMR** — the upward referral (`HealthReferral`). `coordinationId` = Referral ID.\n- **T2 = ComEMR → CARE** — a `HealthContract` booking. `coordinationRef` carries the T1 Referral ID;\n  the T2 contract id becomes T1's `targetBookingRef`.\n\n**Status chaining:** CARE's T2 `on_status` / `on_update` are relayed by ComEMR into T1\n`update` / `on_status`, so HCM (the original referrer) sees provider-side progress. Same schema\npack applied across two hops — no additional schema.\n\n**Cross-link (load-bearing):** `coordination_id_uc4` (T1) ↔ `booking_id_uc4` (T2). Keep both\nidentical to their values across the T1, T2, and Relay folders.\n",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "domain",
+      "value": "health",
+      "type": "string"
+    },
+    {
+      "key": "network_id",
+      "value": "example.net/health",
+      "type": "string",
+      "description": "STUB — confirm exact value with the network registry team."
+    },
+    {
+      "key": "codedvalue_ctx",
+      "value": "https://raw.githubusercontent.com/beckn/DHP-Specs/main/devkit/stub/context.jsonld",
+      "type": "string"
+    },
+    {
+      "key": "auth_token",
+      "value": "",
+      "type": "string",
+      "description": "Network-issued JWT — set before running."
+    },
+    {
+      "key": "bpp_uri",
+      "value": "",
+      "type": "string",
+      "description": "Target base URL. Switch per transaction (ComEMR for T1; HCM for UC3; CARE for UC4-T2)."
+    },
+    {
+      "key": "bap_uri",
+      "value": "",
+      "type": "string",
+      "description": "Caller callback base URL for on_* simulations."
+    },
+    {
+      "key": "hcm_np_id",
+      "value": "hcm-np-digit-hcm-001",
+      "type": "string",
+      "description": "DIGIT HCM subscriber id (STUB)."
+    },
+    {
+      "key": "comemr_np_id",
+      "value": "comemr-np-spice-001",
+      "type": "string",
+      "description": "ComEMR/SPICE subscriber id (STUB)."
+    },
+    {
+      "key": "care_np_id",
+      "value": "care-np-phu-ext-001",
+      "type": "string",
+      "description": "CARE (external PHU HIS) subscriber id (STUB)."
+    },
+    {
+      "key": "transaction_id_uc1",
+      "value": "b1a1e1d1-0001-4000-8000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "coordination_id_uc1",
+      "value": "b1a1e1d1-0001-4000-8000-0000000000a1",
+      "type": "string",
+      "description": "UC1 Referral ID."
+    },
+    {
+      "key": "transaction_id_uc2",
+      "value": "b1a1e1d1-0002-4000-8000-000000000002",
+      "type": "string"
+    },
+    {
+      "key": "coordination_id_uc2",
+      "value": "b1a1e1d1-0002-4000-8000-0000000000a2",
+      "type": "string",
+      "description": "UC2 Referral ID."
+    },
+    {
+      "key": "transaction_id_uc3",
+      "value": "b1a1e1d1-0003-4000-8000-000000000003",
+      "type": "string"
+    },
+    {
+      "key": "coordination_id_uc3",
+      "value": "b1a1e1d1-0003-4000-8000-0000000000a3",
+      "type": "string",
+      "description": "UC3 task-out coordination id."
+    },
+    {
+      "key": "transaction_id_uc4_t1",
+      "value": "b1a1e1d1-0004-4000-8000-000000000041",
+      "type": "string"
+    },
+    {
+      "key": "transaction_id_uc4_t2",
+      "value": "b1a1e1d1-0004-4000-8000-000000000042",
+      "type": "string"
+    },
+    {
+      "key": "coordination_id_uc4",
+      "value": "b1a1e1d1-0004-4000-8000-0000000000a4",
+      "type": "string",
+      "description": "UC4 T1 Referral ID; carried into T2 as coordinationRef."
+    },
+    {
+      "key": "booking_id_uc4",
+      "value": "b1a1e1d1-0004-4000-8000-0000000000b4",
+      "type": "string",
+      "description": "UC4 T2 (CARE) booking id = T1 targetBookingRef."
+    },
+    {
+      "key": "chw_campaign_participant_id",
+      "value": "participant-chw-campaign",
+      "type": "string"
+    },
+    {
+      "key": "chw_clinical_participant_id",
+      "value": "participant-chw-clinical",
+      "type": "string"
+    },
+    {
+      "key": "child_participant_id",
+      "value": "participant-child-uc1",
+      "type": "string"
+    },
+    {
+      "key": "mother_participant_id",
+      "value": "participant-mother-uc2",
+      "type": "string"
+    },
+    {
+      "key": "routine_chw_participant_id",
+      "value": "participant-routine-chw",
+      "type": "string"
+    },
+    {
+      "key": "comemr_coordinator_participant_id",
+      "value": "participant-comemr-coordinator",
+      "type": "string"
+    },
+    {
+      "key": "care_provider_participant_id",
+      "value": "participant-care-provider",
+      "type": "string"
+    },
+    {
+      "key": "coord_resource_id",
+      "value": "res-comemr-coord",
+      "type": "string"
+    },
+    {
+      "key": "coord_offer_id",
+      "value": "offer-comemr-coord",
+      "type": "string"
+    },
+    {
+      "key": "coord_catalog_id",
+      "value": "catalog-comemr-coord",
+      "type": "string"
+    },
+    {
+      "key": "campaign_resource_id",
+      "value": "res-hcm-campaign-field",
+      "type": "string"
+    },
+    {
+      "key": "campaign_offer_id",
+      "value": "offer-hcm-campaign-field",
+      "type": "string"
+    },
+    {
+      "key": "campaign_catalog_id",
+      "value": "catalog-hcm-campaign",
+      "type": "string"
+    },
+    {
+      "key": "care_resource_id",
+      "value": "res-care-phu",
+      "type": "string"
+    },
+    {
+      "key": "care_offer_id",
+      "value": "offer-care-phu",
+      "type": "string"
+    },
+    {
+      "key": "care_catalog_id",
+      "value": "catalog-care-phu",
+      "type": "string"
+    },
+    {
+      "key": "referralnote_doc_ref",
+      "value": "referralnote-001",
+      "type": "string"
+    },
+    {
+      "key": "outcomenote_doc_ref",
+      "value": "outcomenote-001",
+      "type": "string"
+    },
+    {
+      "key": "consent_id",
+      "value": "b1a1e1d1-0000-4000-8000-0000000000c1",
+      "type": "string"
+    },
+    {
+      "key": "consent_doc_ref",
+      "value": "consent-001",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "T1 · Referral Coordination  (BAP DIGIT HCM → BPP ComEMR)",
+      "description": "Upstream referral. coordinationId = Referral ID, carried into T2.",
+      "item": [
+        {
+          "name": "01 — select",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"select\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc4_t1}}\",\n    \"messageId\": \"759b5189-0866-50df-bed1-46ba257c7619\",\n    \"timestamp\": \"2026-07-06T08:20:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"status\": {\n        \"code\": \"DRAFT\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"DRAFT\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{coord_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{coord_offer_id}}\",\n            \"resourceIds\": [\n              \"{{coord_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"participants\": [\n        {\n          \"id\": \"{{chw_campaign_participant_id}}\",\n          \"participantAttributes\": {\n            \"@context\": \"https://schema.beckn.io/HealthParticipant/v2.1/context.jsonld\",\n            \"@type\": \"hpa:HealthParticipant\",\n            \"participantRole\": \"COMMUNITY_HEALTH_WORKER\",\n            \"healthIds\": [\n              {\n                \"system\": \"ASHA-ID\",\n                \"value\": \"ASHA-HCM-0007\"\n              }\n            ]\n          }\n        },\n        {\n          \"id\": \"{{child_participant_id}}\",\n          \"participantAttributes\": {\n            \"@context\": \"https://schema.beckn.io/HealthParticipant/v2.1/context.jsonld\",\n            \"@type\": \"hpa:HealthParticipant\",\n            \"participantRole\": \"PATIENT\",\n            \"healthIds\": [\n              {\n                \"system\": \"ABHA\",\n                \"value\": \"91-2222-3333-4444\"\n              }\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc4}}\",\n        \"lifecycleState\": \"DRAFT\",\n        \"clinicalUrgencyTier\": \"URGENT\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"PAEDIATRICS\",\n            \"display\": \"Paediatrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"ICCM\",\n            \"display\": \"Integrated Community Case Management\"\n          },\n          \"equipmentNeeds\": [\n            \"RDT_MALARIA\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bpp_uri}}/select"
+            },
+            "description": "HCM opens the upward referral to ComEMR (directed)."
+          },
+          "response": []
+        },
+        {
+          "name": "02 — on_select",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_select\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc4_t1}}\",\n    \"messageId\": \"630d1a22-e1c9-5fe9-847f-3da40aa81758\",\n    \"timestamp\": \"2026-07-06T08:21:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc4}}\",\n      \"status\": {\n        \"code\": \"DRAFT\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"DRAFT\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{coord_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{coord_offer_id}}\",\n            \"resourceIds\": [\n              \"{{coord_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc4}}\",\n        \"lifecycleState\": \"DRAFT\",\n        \"clinicalUrgencyTier\": \"URGENT\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"PAEDIATRICS\",\n            \"display\": \"Paediatrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"ICCM\",\n            \"display\": \"Integrated Community Case Management\"\n          },\n          \"equipmentNeeds\": [\n            \"RDT_MALARIA\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_select"
+            },
+            "description": "ComEMR assigns the Referral ID."
+          },
+          "response": []
+        },
+        {
+          "name": "03 — init",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"init\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc4_t1}}\",\n    \"messageId\": \"224d94f4-4547-51c7-a3fe-b473915942f1\",\n    \"timestamp\": \"2026-07-06T08:22:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc4}}\",\n      \"status\": {\n        \"code\": \"DRAFT\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"DRAFT\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{coord_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{coord_offer_id}}\",\n            \"resourceIds\": [\n              \"{{coord_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"participants\": [\n        {\n          \"id\": \"{{chw_campaign_participant_id}}\",\n          \"participantAttributes\": {\n            \"@context\": \"https://schema.beckn.io/HealthParticipant/v2.1/context.jsonld\",\n            \"@type\": \"hpa:HealthParticipant\",\n            \"participantRole\": \"COMMUNITY_HEALTH_WORKER\",\n            \"healthIds\": [\n              {\n                \"system\": \"ASHA-ID\",\n                \"value\": \"ASHA-HCM-0007\"\n              }\n            ],\n            \"primaryLanguage\": \"en\"\n          },\n          \"descriptor\": {\n            \"name\": \"CHW — Campaign Mode\",\n            \"shortDesc\": \"Nominator\"\n          }\n        },\n        {\n          \"id\": \"{{child_participant_id}}\",\n          \"participantAttributes\": {\n            \"@context\": \"https://schema.beckn.io/HealthParticipant/v2.1/context.jsonld\",\n            \"@type\": \"hpa:HealthParticipant\",\n            \"participantRole\": \"PATIENT\",\n            \"healthIds\": [\n              {\n                \"system\": \"ABHA\",\n                \"value\": \"91-2222-3333-4444\"\n              }\n            ],\n            \"primaryLanguage\": \"en\"\n          },\n          \"descriptor\": {\n            \"name\": \"Child (Fever / RDT+)\",\n            \"shortDesc\": \"Subject\"\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc4}}\",\n        \"lifecycleState\": \"DRAFT\",\n        \"clinicalUrgencyTier\": \"URGENT\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"PAEDIATRICS\",\n            \"display\": \"Paediatrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"ICCM\",\n            \"display\": \"Integrated Community Case Management\"\n          },\n          \"equipmentNeeds\": [\n            \"RDT_MALARIA\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bpp_uri}}/init"
+            },
+            "description": "Binding intent."
+          },
+          "response": []
+        },
+        {
+          "name": "04 — on_init",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_init\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc4_t1}}\",\n    \"messageId\": \"04cb115a-d7b6-519f-9bf4-f608b72bedf3\",\n    \"timestamp\": \"2026-07-06T08:23:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc4}}\",\n      \"status\": {\n        \"code\": \"DRAFT\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"DRAFT\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{coord_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{coord_offer_id}}\",\n            \"resourceIds\": [\n              \"{{coord_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc4}}\",\n        \"lifecycleState\": \"DRAFT\",\n        \"clinicalUrgencyTier\": \"URGENT\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"PAEDIATRICS\",\n            \"display\": \"Paediatrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"ICCM\",\n            \"display\": \"Integrated Community Case Management\"\n          },\n          \"equipmentNeeds\": [\n            \"RDT_MALARIA\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_init"
+            },
+            "description": "Draft echoed."
+          },
+          "response": []
+        },
+        {
+          "name": "05 — confirm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"confirm\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc4_t1}}\",\n    \"messageId\": \"2f915e23-4d20-5dc8-83de-8de5b2a4d14b\",\n    \"timestamp\": \"2026-07-06T08:25:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc4}}\",\n      \"status\": {\n        \"code\": \"ACTIVE\"\n      },\n      \"descriptor\": {\n        \"name\": \"Upward Referral — Child Fever (separate-HIS PHU)\",\n        \"docs\": [\n          {\n            \"id\": \"{{referralnote_doc_ref}}\",\n            \"name\": \"Field Referral Note\",\n            \"url\": \"https://docs.example.org/referral/{{referralnote_doc_ref}}.pdf\",\n            \"mimeType\": \"application/pdf\",\n            \"standard\": \"FHIR/ServiceRequest\"\n          },\n          {\n            \"id\": \"{{consent_doc_ref}}\",\n            \"name\": \"Consent — CHW-mediated (Class A)\",\n            \"url\": \"https://docs.example.org/consent/{{consent_doc_ref}}.pdf\",\n            \"mimeType\": \"application/pdf\"\n          }\n        ]\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"ACTIVE\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{coord_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{coord_offer_id}}\",\n            \"resourceIds\": [\n              \"{{coord_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc4}}\",\n        \"lifecycleState\": \"ACTIVE\",\n        \"clinicalUrgencyTier\": \"URGENT\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"PAEDIATRICS\",\n            \"display\": \"Paediatrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"ICCM\",\n            \"display\": \"Integrated Community Case Management\"\n          },\n          \"equipmentNeeds\": [\n            \"RDT_MALARIA\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        },\n        \"consent\": {\n          \"consentClass\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"ConsentClass\",\n            \"code\": \"A\",\n            \"display\": \"Explicit, mediated (CHW-mediated)\"\n          },\n          \"consentId\": \"{{consent_id}}\",\n          \"consentDocRef\": \"{{consent_doc_ref}}\",\n          \"patientParticipantId\": \"{{child_participant_id}}\",\n          \"consentStandard\": \"HealthConsent/v1\",\n          \"consentedAt\": \"2026-07-06T08:15:00+03:00\",\n          \"consentedBy\": \"{{chw_campaign_participant_id}}\",\n          \"purposeOfCollection\": [\n            \"REFERRAL_CARE\",\n            \"TREATMENT\"\n          ],\n          \"mediatorCredentialRef\": \"did:example:chw:{{chw_campaign_participant_id}}\"\n        },\n        \"referralNote\": {\n          \"artifactRef\": \"{{referralnote_doc_ref}}\",\n          \"credentialScope\": \"did:example:comemr:{{comemr_coordinator_participant_id}}\",\n          \"accessWindowStart\": \"2026-07-06T08:15:00+03:00\",\n          \"accessWindowEnd\": \"2026-08-06T08:00:00+03:00\",\n          \"revocationStatus\": \"ACTIVE\",\n          \"specialty\": \"Paediatrics / iCCM\",\n          \"urgency\": \"URGENT\",\n          \"priorResultRefs\": []\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bpp_uri}}/confirm"
+            },
+            "description": "Confirm with consent + referral note."
+          },
+          "response": []
+        },
+        {
+          "name": "06 — on_confirm  ★ Referral issued (coordinationId)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_confirm\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc4_t1}}\",\n    \"messageId\": \"2724ef2e-1d43-576a-85a8-bda91a34987a\",\n    \"timestamp\": \"2026-07-06T08:26:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc4}}\",\n      \"status\": {\n        \"code\": \"ACTIVE\"\n      },\n      \"descriptor\": {\n        \"name\": \"Upward Referral — Child Fever (separate-HIS PHU)\",\n        \"docs\": [\n          {\n            \"id\": \"{{referralnote_doc_ref}}\",\n            \"name\": \"Field Referral Note\",\n            \"url\": \"https://docs.example.org/referral/{{referralnote_doc_ref}}.pdf\",\n            \"mimeType\": \"application/pdf\",\n            \"standard\": \"FHIR/ServiceRequest\"\n          },\n          {\n            \"id\": \"{{consent_doc_ref}}\",\n            \"name\": \"Consent — CHW-mediated (Class A)\",\n            \"url\": \"https://docs.example.org/consent/{{consent_doc_ref}}.pdf\",\n            \"mimeType\": \"application/pdf\"\n          }\n        ]\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"ACTIVE\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{coord_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{coord_offer_id}}\",\n            \"resourceIds\": [\n              \"{{coord_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"participants\": [\n        {\n          \"id\": \"{{chw_campaign_participant_id}}\",\n          \"participantAttributes\": {\n            \"@context\": \"https://schema.beckn.io/HealthParticipant/v2.1/context.jsonld\",\n            \"@type\": \"hpa:HealthParticipant\",\n            \"participantRole\": \"COMMUNITY_HEALTH_WORKER\",\n            \"healthIds\": [\n              {\n                \"system\": \"ASHA-ID\",\n                \"value\": \"ASHA-HCM-0007\"\n              }\n            ],\n            \"primaryLanguage\": \"en\"\n          },\n          \"descriptor\": {\n            \"name\": \"CHW — Campaign Mode\",\n            \"shortDesc\": \"Nominator\"\n          }\n        },\n        {\n          \"id\": \"{{child_participant_id}}\",\n          \"participantAttributes\": {\n            \"@context\": \"https://schema.beckn.io/HealthParticipant/v2.1/context.jsonld\",\n            \"@type\": \"hpa:HealthParticipant\",\n            \"participantRole\": \"PATIENT\",\n            \"healthIds\": [\n              {\n                \"system\": \"ABHA\",\n                \"value\": \"91-2222-3333-4444\"\n              }\n            ],\n            \"primaryLanguage\": \"en\"\n          },\n          \"descriptor\": {\n            \"name\": \"Child (Fever / RDT+)\",\n            \"shortDesc\": \"Subject\"\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc4}}\",\n        \"lifecycleState\": \"ACTIVE\",\n        \"clinicalUrgencyTier\": \"URGENT\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"PAEDIATRICS\",\n            \"display\": \"Paediatrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"ICCM\",\n            \"display\": \"Integrated Community Case Management\"\n          },\n          \"equipmentNeeds\": [\n            \"RDT_MALARIA\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        },\n        \"consent\": {\n          \"consentClass\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"ConsentClass\",\n            \"code\": \"A\",\n            \"display\": \"Explicit, mediated (CHW-mediated)\"\n          },\n          \"consentId\": \"{{consent_id}}\",\n          \"consentDocRef\": \"{{consent_doc_ref}}\",\n          \"patientParticipantId\": \"{{child_participant_id}}\",\n          \"consentStandard\": \"HealthConsent/v1\",\n          \"consentedAt\": \"2026-07-06T08:15:00+03:00\",\n          \"consentedBy\": \"{{chw_campaign_participant_id}}\",\n          \"purposeOfCollection\": [\n            \"REFERRAL_CARE\",\n            \"TREATMENT\"\n          ],\n          \"mediatorCredentialRef\": \"did:example:chw:{{chw_campaign_participant_id}}\"\n        },\n        \"referralNote\": {\n          \"artifactRef\": \"{{referralnote_doc_ref}}\",\n          \"credentialScope\": \"did:example:comemr:{{comemr_coordinator_participant_id}}\",\n          \"accessWindowStart\": \"2026-07-06T08:15:00+03:00\",\n          \"accessWindowEnd\": \"2026-08-06T08:00:00+03:00\",\n          \"revocationStatus\": \"ACTIVE\",\n          \"specialty\": \"Paediatrics / iCCM\",\n          \"urgency\": \"URGENT\",\n          \"priorResultRefs\": []\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_confirm"
+            },
+            "description": "ComEMR accepts. The escalation PHU runs a SEPARATE system (CARE) → ComEMR initiates a genuine on-network T2."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "T2 · PHU Booking on CARE  (BAP ComEMR → BPP CARE)",
+      "description": "Second on-network hop to the external PHU HIS. HealthContract booking; coordinationRef carries the Referral ID.",
+      "item": [
+        {
+          "name": "01 — discover",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"discover\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{comemr_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc4_t2}}\",\n    \"messageId\": \"235d3010-b112-542b-811a-3fe32ed18134\",\n    \"timestamp\": \"2026-07-06T09:00:00+03:00\",\n    \"schemaContext\": [\n      \"https://schema.beckn.io/HealthResource/v2.1/context.jsonld\",\n      \"https://schema.beckn.io/HealthOffer/v2.1/context.jsonld\"\n    ]\n  },\n  \"message\": {\n    \"intent\": {\n      \"textSearch\": \"PHU paediatric inpatient CARE district referral\",\n      \"filters\": {\n        \"type\": \"jsonpath\",\n        \"expression\": \"$.catalogs[*].resources[*] ? (@.resourceAttributes.healthServiceType == \\\"PHYSICAL_CONSULTATION\\\")\"\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bpp_uri}}/discover"
+            },
+            "description": "ComEMR (now Seeker NP) discovers the escalation PHU on CARE. Broadcast — no bppId."
+          },
+          "response": []
+        },
+        {
+          "name": "02 — on_discover",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_discover\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{comemr_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc4_t2}}\",\n    \"messageId\": \"3ed283d6-8119-5235-8204-1fb7d5da526d\",\n    \"timestamp\": \"2026-07-06T09:01:00+03:00\",\n    \"bppId\": \"{{care_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\",\n    \"schemaContext\": [\n      \"https://schema.beckn.io/HealthResource/v2.1/context.jsonld\",\n      \"https://schema.beckn.io/HealthOffer/v2.1/context.jsonld\"\n    ]\n  },\n  \"message\": {\n    \"catalogs\": [\n      {\n        \"id\": \"{{care_catalog_id}}\",\n        \"bppId\": \"{{care_np_id}}\",\n        \"bppUri\": \"{{bpp_uri}}\",\n        \"descriptor\": {\n          \"name\": \"CARE — PHU Catalogue\"\n        },\n        \"provider\": {\n          \"id\": \"{{care_provider_participant_id}}\",\n          \"descriptor\": {\n            \"name\": \"District PHU (CARE)\"\n          }\n        },\n        \"resources\": [\n          {\n            \"id\": \"{{care_resource_id}}\",\n            \"descriptor\": {\n              \"name\": \"PHU Paediatric Review\",\n              \"shortDesc\": \"Inpatient/OPD paediatric escalation\"\n            },\n            \"resourceAttributes\": {\n              \"@context\": \"https://schema.beckn.io/HealthResource/v2.1/context.jsonld\",\n              \"@type\": \"hr:HealthResource\",\n              \"healthServiceType\": \"PHYSICAL_CONSULTATION\"\n            }\n          }\n        ],\n        \"offers\": [\n          {\n            \"id\": \"{{care_offer_id}}\",\n            \"resourceIds\": [\n              \"{{care_resource_id}}\"\n            ],\n            \"descriptor\": {\n              \"name\": \"PHU escalation slot\"\n            },\n            \"offerAttributes\": {\n              \"@context\": \"https://schema.beckn.io/HealthOffer/v2.1/context.jsonld\",\n              \"@type\": \"hof:HealthOffer\",\n              \"healthServiceType\": \"PHYSICAL_CONSULTATION\",\n              \"offerType\": \"SINGLE_EVENT\"\n            }\n          }\n        ]\n      }\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_discover"
+            },
+            "description": "CARE returns its PHU offer."
+          },
+          "response": []
+        },
+        {
+          "name": "03 — select",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"select\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{comemr_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc4_t2}}\",\n    \"messageId\": \"d57fcac1-1c05-56b2-b89d-16feddef50ae\",\n    \"timestamp\": \"2026-07-06T09:05:00+03:00\",\n    \"bppId\": \"{{care_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"status\": {\n        \"code\": \"DRAFT\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"DRAFT\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{care_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{care_offer_id}}\",\n            \"resourceIds\": [\n              \"{{care_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"participants\": [\n        {\n          \"id\": \"{{child_participant_id}}\",\n          \"participantAttributes\": {\n            \"@context\": \"https://schema.beckn.io/HealthParticipant/v2.1/context.jsonld\",\n            \"@type\": \"hpa:HealthParticipant\",\n            \"participantRole\": \"PATIENT\",\n            \"healthIds\": [\n              {\n                \"system\": \"ABHA\",\n                \"value\": \"91-2222-3333-4444\"\n              }\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthContract/v2.1/context.jsonld\",\n        \"@type\": \"hct:HealthContract\",\n        \"healthServiceType\": \"PHYSICAL_CONSULTATION\",\n        \"coordinationRef\": \"{{coordination_id_uc4}}\",\n        \"consent\": {\n          \"consentClass\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"ConsentClass\",\n            \"code\": \"A\",\n            \"display\": \"Explicit, mediated (CHW-mediated)\"\n          },\n          \"consentId\": \"{{consent_id}}\",\n          \"consentDocRef\": \"{{consent_doc_ref}}\",\n          \"patientParticipantId\": \"{{child_participant_id}}\",\n          \"consentStandard\": \"HealthConsent/v1\",\n          \"consentedAt\": \"2026-07-06T08:15:00+03:00\",\n          \"consentedBy\": \"{{chw_campaign_participant_id}}\",\n          \"purposeOfCollection\": [\n            \"REFERRAL_CARE\",\n            \"TREATMENT\"\n          ],\n          \"mediatorCredentialRef\": \"did:example:chw:{{chw_campaign_participant_id}}\"\n        },\n        \"inputArtifacts\": [\n          {\n            \"artifactRef\": \"{{referralnote_doc_ref}}\",\n            \"artifactType\": \"REFERRAL\",\n            \"mimeType\": \"application/pdf\",\n            \"sourceCoordinationRef\": \"{{coordination_id_uc4}}\",\n            \"accessWindowEnd\": \"2026-08-06T08:00:00+03:00\",\n            \"revocationStatus\": \"ACTIVE\"\n          }\n        ]\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bpp_uri}}/select"
+            },
+            "description": "ComEMR books CARE. HealthContract booking carrying coordinationRef = the T1 Referral ID, plus the referral note as an inputArtifact."
+          },
+          "response": []
+        },
+        {
+          "name": "04 — on_select",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_select\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{comemr_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc4_t2}}\",\n    \"messageId\": \"1df3ed62-618e-52ff-a24a-6e71ad1da9f9\",\n    \"timestamp\": \"2026-07-06T09:06:00+03:00\",\n    \"bppId\": \"{{care_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{booking_id_uc4}}\",\n      \"status\": {\n        \"code\": \"DRAFT\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"DRAFT\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{care_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{care_offer_id}}\",\n            \"resourceIds\": [\n              \"{{care_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthContract/v2.1/context.jsonld\",\n        \"@type\": \"hct:HealthContract\",\n        \"healthServiceType\": \"PHYSICAL_CONSULTATION\",\n        \"coordinationRef\": \"{{coordination_id_uc4}}\",\n        \"consent\": {\n          \"consentClass\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"ConsentClass\",\n            \"code\": \"A\",\n            \"display\": \"Explicit, mediated (CHW-mediated)\"\n          },\n          \"consentId\": \"{{consent_id}}\",\n          \"consentDocRef\": \"{{consent_doc_ref}}\",\n          \"patientParticipantId\": \"{{child_participant_id}}\",\n          \"consentStandard\": \"HealthConsent/v1\",\n          \"consentedAt\": \"2026-07-06T08:15:00+03:00\",\n          \"consentedBy\": \"{{chw_campaign_participant_id}}\",\n          \"purposeOfCollection\": [\n            \"REFERRAL_CARE\",\n            \"TREATMENT\"\n          ],\n          \"mediatorCredentialRef\": \"did:example:chw:{{chw_campaign_participant_id}}\"\n        },\n        \"inputArtifacts\": [\n          {\n            \"artifactRef\": \"{{referralnote_doc_ref}}\",\n            \"artifactType\": \"REFERRAL\",\n            \"mimeType\": \"application/pdf\",\n            \"sourceCoordinationRef\": \"{{coordination_id_uc4}}\",\n            \"accessWindowEnd\": \"2026-08-06T08:00:00+03:00\",\n            \"revocationStatus\": \"ACTIVE\"\n          }\n        ]\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_select"
+            },
+            "description": "CARE assigns the booking id (= T1 targetBookingRef)."
+          },
+          "response": []
+        },
+        {
+          "name": "05 — init",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"init\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{comemr_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc4_t2}}\",\n    \"messageId\": \"dfcc3746-08d3-520c-a1b9-a27fa89a4236\",\n    \"timestamp\": \"2026-07-06T09:07:00+03:00\",\n    \"bppId\": \"{{care_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{booking_id_uc4}}\",\n      \"status\": {\n        \"code\": \"DRAFT\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"DRAFT\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{care_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{care_offer_id}}\",\n            \"resourceIds\": [\n              \"{{care_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"participants\": [\n        {\n          \"id\": \"{{child_participant_id}}\",\n          \"participantAttributes\": {\n            \"@context\": \"https://schema.beckn.io/HealthParticipant/v2.1/context.jsonld\",\n            \"@type\": \"hpa:HealthParticipant\",\n            \"participantRole\": \"PATIENT\",\n            \"healthIds\": [\n              {\n                \"system\": \"ABHA\",\n                \"value\": \"91-2222-3333-4444\"\n              }\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthContract/v2.1/context.jsonld\",\n        \"@type\": \"hct:HealthContract\",\n        \"healthServiceType\": \"PHYSICAL_CONSULTATION\",\n        \"coordinationRef\": \"{{coordination_id_uc4}}\",\n        \"consent\": {\n          \"consentClass\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"ConsentClass\",\n            \"code\": \"A\",\n            \"display\": \"Explicit, mediated (CHW-mediated)\"\n          },\n          \"consentId\": \"{{consent_id}}\",\n          \"consentDocRef\": \"{{consent_doc_ref}}\",\n          \"patientParticipantId\": \"{{child_participant_id}}\",\n          \"consentStandard\": \"HealthConsent/v1\",\n          \"consentedAt\": \"2026-07-06T08:15:00+03:00\",\n          \"consentedBy\": \"{{chw_campaign_participant_id}}\",\n          \"purposeOfCollection\": [\n            \"REFERRAL_CARE\",\n            \"TREATMENT\"\n          ],\n          \"mediatorCredentialRef\": \"did:example:chw:{{chw_campaign_participant_id}}\"\n        },\n        \"inputArtifacts\": [\n          {\n            \"artifactRef\": \"{{referralnote_doc_ref}}\",\n            \"artifactType\": \"REFERRAL\",\n            \"mimeType\": \"application/pdf\",\n            \"sourceCoordinationRef\": \"{{coordination_id_uc4}}\",\n            \"accessWindowEnd\": \"2026-08-06T08:00:00+03:00\",\n            \"revocationStatus\": \"ACTIVE\"\n          }\n        ]\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bpp_uri}}/init"
+            },
+            "description": "Binding intent."
+          },
+          "response": []
+        },
+        {
+          "name": "06 — on_init",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_init\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{comemr_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc4_t2}}\",\n    \"messageId\": \"5de01a7e-4e36-5dfc-b492-4f3c526bfd4d\",\n    \"timestamp\": \"2026-07-06T09:08:00+03:00\",\n    \"bppId\": \"{{care_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{booking_id_uc4}}\",\n      \"status\": {\n        \"code\": \"DRAFT\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"DRAFT\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{care_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{care_offer_id}}\",\n            \"resourceIds\": [\n              \"{{care_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthContract/v2.1/context.jsonld\",\n        \"@type\": \"hct:HealthContract\",\n        \"healthServiceType\": \"PHYSICAL_CONSULTATION\",\n        \"coordinationRef\": \"{{coordination_id_uc4}}\",\n        \"consent\": {\n          \"consentClass\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"ConsentClass\",\n            \"code\": \"A\",\n            \"display\": \"Explicit, mediated (CHW-mediated)\"\n          },\n          \"consentId\": \"{{consent_id}}\",\n          \"consentDocRef\": \"{{consent_doc_ref}}\",\n          \"patientParticipantId\": \"{{child_participant_id}}\",\n          \"consentStandard\": \"HealthConsent/v1\",\n          \"consentedAt\": \"2026-07-06T08:15:00+03:00\",\n          \"consentedBy\": \"{{chw_campaign_participant_id}}\",\n          \"purposeOfCollection\": [\n            \"REFERRAL_CARE\",\n            \"TREATMENT\"\n          ],\n          \"mediatorCredentialRef\": \"did:example:chw:{{chw_campaign_participant_id}}\"\n        },\n        \"inputArtifacts\": [\n          {\n            \"artifactRef\": \"{{referralnote_doc_ref}}\",\n            \"artifactType\": \"REFERRAL\",\n            \"mimeType\": \"application/pdf\",\n            \"sourceCoordinationRef\": \"{{coordination_id_uc4}}\",\n            \"accessWindowEnd\": \"2026-08-06T08:00:00+03:00\",\n            \"revocationStatus\": \"ACTIVE\"\n          }\n        ]\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_init"
+            },
+            "description": "Draft echoed."
+          },
+          "response": []
+        },
+        {
+          "name": "07 — confirm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"confirm\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{comemr_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc4_t2}}\",\n    \"messageId\": \"ef443a7d-1d2f-5595-b100-69819f9dde55\",\n    \"timestamp\": \"2026-07-06T09:10:00+03:00\",\n    \"bppId\": \"{{care_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{booking_id_uc4}}\",\n      \"status\": {\n        \"code\": \"ACTIVE\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"ACTIVE\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{care_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{care_offer_id}}\",\n            \"resourceIds\": [\n              \"{{care_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthContract/v2.1/context.jsonld\",\n        \"@type\": \"hct:HealthContract\",\n        \"healthServiceType\": \"PHYSICAL_CONSULTATION\",\n        \"coordinationRef\": \"{{coordination_id_uc4}}\",\n        \"consent\": {\n          \"consentClass\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"ConsentClass\",\n            \"code\": \"A\",\n            \"display\": \"Explicit, mediated (CHW-mediated)\"\n          },\n          \"consentId\": \"{{consent_id}}\",\n          \"consentDocRef\": \"{{consent_doc_ref}}\",\n          \"patientParticipantId\": \"{{child_participant_id}}\",\n          \"consentStandard\": \"HealthConsent/v1\",\n          \"consentedAt\": \"2026-07-06T08:15:00+03:00\",\n          \"consentedBy\": \"{{chw_campaign_participant_id}}\",\n          \"purposeOfCollection\": [\n            \"REFERRAL_CARE\",\n            \"TREATMENT\"\n          ],\n          \"mediatorCredentialRef\": \"did:example:chw:{{chw_campaign_participant_id}}\"\n        },\n        \"inputArtifacts\": [\n          {\n            \"artifactRef\": \"{{referralnote_doc_ref}}\",\n            \"artifactType\": \"REFERRAL\",\n            \"mimeType\": \"application/pdf\",\n            \"sourceCoordinationRef\": \"{{coordination_id_uc4}}\",\n            \"accessWindowEnd\": \"2026-08-06T08:00:00+03:00\",\n            \"revocationStatus\": \"ACTIVE\"\n          }\n        ]\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bpp_uri}}/confirm"
+            },
+            "description": "ComEMR confirms the PHU booking on CARE."
+          },
+          "response": []
+        },
+        {
+          "name": "08 — on_confirm  ★ PHU booked on CARE",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_confirm\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{comemr_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc4_t2}}\",\n    \"messageId\": \"0d9bcec6-a2c0-5086-91d2-157628b71053\",\n    \"timestamp\": \"2026-07-06T09:11:00+03:00\",\n    \"bppId\": \"{{care_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{booking_id_uc4}}\",\n      \"status\": {\n        \"code\": \"ACTIVE\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"ACTIVE\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{care_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{care_offer_id}}\",\n            \"resourceIds\": [\n              \"{{care_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthContract/v2.1/context.jsonld\",\n        \"@type\": \"hct:HealthContract\",\n        \"healthServiceType\": \"PHYSICAL_CONSULTATION\",\n        \"coordinationRef\": \"{{coordination_id_uc4}}\",\n        \"consent\": {\n          \"consentClass\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"ConsentClass\",\n            \"code\": \"A\",\n            \"display\": \"Explicit, mediated (CHW-mediated)\"\n          },\n          \"consentId\": \"{{consent_id}}\",\n          \"consentDocRef\": \"{{consent_doc_ref}}\",\n          \"patientParticipantId\": \"{{child_participant_id}}\",\n          \"consentStandard\": \"HealthConsent/v1\",\n          \"consentedAt\": \"2026-07-06T08:15:00+03:00\",\n          \"consentedBy\": \"{{chw_campaign_participant_id}}\",\n          \"purposeOfCollection\": [\n            \"REFERRAL_CARE\",\n            \"TREATMENT\"\n          ],\n          \"mediatorCredentialRef\": \"did:example:chw:{{chw_campaign_participant_id}}\"\n        },\n        \"inputArtifacts\": [\n          {\n            \"artifactRef\": \"{{referralnote_doc_ref}}\",\n            \"artifactType\": \"REFERRAL\",\n            \"mimeType\": \"application/pdf\",\n            \"sourceCoordinationRef\": \"{{coordination_id_uc4}}\",\n            \"accessWindowEnd\": \"2026-08-06T08:00:00+03:00\",\n            \"revocationStatus\": \"ACTIVE\"\n          }\n        ]\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_confirm"
+            },
+            "description": "CARE accepts. booking_id_uc4 is the T2 contract id; ComEMR records it as the T1 targetBookingRef."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Relay · CARE progress → T1 status chain",
+      "description": "ComEMR relays CARE's T2 on_status/on_update back into T1 so the original referrer (HCM) sees provider-side progress.",
+      "item": [
+        {
+          "name": "01 — T2 on_status (CARE → ComEMR): child attended",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_status\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{comemr_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc4_t2}}\",\n    \"messageId\": \"8e2f19be-e75c-519b-bd78-ef37be7103eb\",\n    \"timestamp\": \"2026-07-06T14:00:00+03:00\",\n    \"bppId\": \"{{care_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{booking_id_uc4}}\",\n      \"status\": {\n        \"code\": \"ACTIVE\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"ACTIVE\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{care_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{care_offer_id}}\",\n            \"resourceIds\": [\n              \"{{care_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthContract/v2.1/context.jsonld\",\n        \"@type\": \"hct:HealthContract\",\n        \"healthServiceType\": \"PHYSICAL_CONSULTATION\",\n        \"coordinationRef\": \"{{coordination_id_uc4}}\",\n        \"lifecycleState\": \"ATTENDED\"\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_status"
+            },
+            "description": "CARE reports provider-side progress on T2 (child attended the PHU)."
+          },
+          "response": []
+        },
+        {
+          "name": "02 — T1 update (ComEMR → HCM): BOOKING_CONFIRMED + targetBookingRef",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"update\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc4_t1}}\",\n    \"messageId\": \"d53a0fca-b50e-5177-8d33-4741f13d4c83\",\n    \"timestamp\": \"2026-07-06T14:05:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc4}}\",\n      \"status\": {\n        \"code\": \"ACTIVE\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"ACTIVE\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{coord_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{coord_offer_id}}\",\n            \"resourceIds\": [\n              \"{{coord_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc4}}\",\n        \"lifecycleState\": \"BOOKING_CONFIRMED\",\n        \"clinicalUrgencyTier\": \"URGENT\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"PAEDIATRICS\",\n            \"display\": \"Paediatrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"ICCM\",\n            \"display\": \"Integrated Community Case Management\"\n          },\n          \"equipmentNeeds\": [\n            \"RDT_MALARIA\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        },\n        \"targetBookingRef\": \"{{booking_id_uc4}}\"\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bpp_uri}}/update"
+            },
+            "description": "ComEMR relays CARE progress into T1 and sets targetBookingRef = the CARE booking id, so HCM (original referrer) sees the downstream hop."
+          },
+          "response": []
+        },
+        {
+          "name": "03 — T1 on_update",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_update\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc4_t1}}\",\n    \"messageId\": \"90e2fc84-1648-51a4-9d80-f6ef480a8ae3\",\n    \"timestamp\": \"2026-07-06T14:06:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc4}}\",\n      \"status\": {\n        \"code\": \"ACTIVE\"\n      },\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc4}}\",\n        \"lifecycleState\": \"BOOKING_CONFIRMED\",\n        \"clinicalUrgencyTier\": \"URGENT\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"PAEDIATRICS\",\n            \"display\": \"Paediatrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"ICCM\",\n            \"display\": \"Integrated Community Case Management\"\n          },\n          \"equipmentNeeds\": [\n            \"RDT_MALARIA\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        },\n        \"targetBookingRef\": \"{{booking_id_uc4}}\"\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_update"
+            },
+            "description": "Ack."
+          },
+          "response": []
+        },
+        {
+          "name": "04 — T2 on_update (CARE → ComEMR): outcome",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_update\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{comemr_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc4_t2}}\",\n    \"messageId\": \"57105002-fa7c-5549-9a28-d0419aaede0a\",\n    \"timestamp\": \"2026-07-08T09:00:00+03:00\",\n    \"bppId\": \"{{care_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{booking_id_uc4}}\",\n      \"status\": {\n        \"code\": \"ACTIVE\"\n      },\n      \"descriptor\": {\n        \"name\": \"PHU Outcome\",\n        \"docs\": [\n          {\n            \"id\": \"{{outcomenote_doc_ref}}\",\n            \"name\": \"PHU Outcome Note\",\n            \"url\": \"https://docs.example.org/outcome/{{outcomenote_doc_ref}}.pdf\",\n            \"mimeType\": \"application/pdf\",\n            \"standard\": \"FHIR/DiagnosticReport\"\n          }\n        ]\n      },\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthContract/v2.1/context.jsonld\",\n        \"@type\": \"hct:HealthContract\",\n        \"healthServiceType\": \"PHYSICAL_CONSULTATION\",\n        \"coordinationRef\": \"{{coordination_id_uc4}}\",\n        \"lifecycleState\": \"OUTCOME_RECEIVED\"\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_update"
+            },
+            "description": "CARE returns the PHU outcome note on T2."
+          },
+          "response": []
+        },
+        {
+          "name": "05 — T1 update (ComEMR → HCM): OUTCOME_RECEIVED (relayed)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"update\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc4_t1}}\",\n    \"messageId\": \"e9f081d5-4ca5-57f4-a8f0-bab1efc1bf43\",\n    \"timestamp\": \"2026-07-08T09:05:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc4}}\",\n      \"status\": {\n        \"code\": \"ACTIVE\"\n      },\n      \"descriptor\": {\n        \"name\": \"Outcome (relayed from CARE)\",\n        \"docs\": [\n          {\n            \"id\": \"{{outcomenote_doc_ref}}\",\n            \"name\": \"Outcome Note (relayed)\",\n            \"url\": \"https://docs.example.org/outcome/{{outcomenote_doc_ref}}.pdf\",\n            \"mimeType\": \"application/pdf\",\n            \"standard\": \"FHIR/DiagnosticReport\"\n          }\n        ]\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"ACTIVE\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{coord_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{coord_offer_id}}\",\n            \"resourceIds\": [\n              \"{{coord_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc4}}\",\n        \"lifecycleState\": \"OUTCOME_RECEIVED\",\n        \"clinicalUrgencyTier\": \"URGENT\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"PAEDIATRICS\",\n            \"display\": \"Paediatrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"ICCM\",\n            \"display\": \"Integrated Community Case Management\"\n          },\n          \"equipmentNeeds\": [\n            \"RDT_MALARIA\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        },\n        \"targetBookingRef\": \"{{booking_id_uc4}}\",\n        \"handoverDocument\": {\n          \"artifactRef\": \"{{outcomenote_doc_ref}}\",\n          \"credentialScope\": \"did:example:hcm:{{chw_campaign_participant_id}}\",\n          \"accessWindowStart\": \"2026-07-08T09:05:00+03:00\",\n          \"accessWindowEnd\": \"2026-08-08T09:00:00+03:00\",\n          \"revocationStatus\": \"ACTIVE\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bpp_uri}}/update"
+            },
+            "description": "ComEMR relays CARE's outcome into T1 status/update — the two-transaction status chain."
+          },
+          "response": []
+        },
+        {
+          "name": "06 — T1 on_update  ★ Referral closed (relay complete)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_update\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{hcm_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc4_t1}}\",\n    \"messageId\": \"926a571b-595e-5ddb-92b2-742c43ffb447\",\n    \"timestamp\": \"2026-07-08T09:06:00+03:00\",\n    \"bppId\": \"{{comemr_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc4}}\",\n      \"status\": {\n        \"code\": \"COMPLETE\"\n      },\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/HealthReferral/v2.1/context.jsonld\",\n        \"@type\": \"hrf:HealthReferral\",\n        \"coordinationId\": \"{{coordination_id_uc4}}\",\n        \"lifecycleState\": \"CLOSED\",\n        \"clinicalUrgencyTier\": \"URGENT\",\n        \"targetCriteria\": {\n          \"specialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"Specialty\",\n            \"code\": \"PAEDIATRICS\",\n            \"display\": \"Paediatrics\"\n          },\n          \"subSpecialty\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"SubSpecialty\",\n            \"code\": \"ICCM\",\n            \"display\": \"Integrated Community Case Management\"\n          },\n          \"equipmentNeeds\": [\n            \"RDT_MALARIA\"\n          ],\n          \"consultationModality\": \"IN_PERSON\"\n        },\n        \"targetBookingRef\": \"{{booking_id_uc4}}\"\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_update"
+            },
+            "description": "Terminal ack; T1 closed."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

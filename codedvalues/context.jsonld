@@ -1,0 +1,8 @@
+{
+  "@context": {
+    "sygnal": "https://spec.sygnal.network/vocab#",
+    "code": "@id",
+    "display": "http://www.w3.org/2000/01/rdf-schema#label"
+  },
+  "_comment": "Sygnal network CodedValue context (draft, v0.9). Sibling attributes.yaml carries one code-enum class per @type. Follows the Beckn DHP CodedValue pattern ({@context, @type, code, display})."
+}

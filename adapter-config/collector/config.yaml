@@ -1,0 +1,62 @@
+# Sygnal network: telemetry collector (network side).
+#
+# Receives ONIX audit records (OTLP) from participants' adapters and forwards only
+# those records, as OTLP/JSON, to the network's reporting service. It keeps only
+# ONIX audit records and strips request signatures. The reporting service then
+# applies the network's audit-field allow-list again before storing anything.
+# Tested with OpenTelemetry Collector contrib 0.115.1.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317        # put a TLS-terminating proxy in front; ONIX's exporter always uses TLS
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 200
+  # Keep only ONIX audit records (instrumentation scope "Beckn_ONIX"); drop any other log.
+  filter/audit_only:
+    error_mode: ignore
+    logs:
+      log_record:
+        - 'instrumentation_scope.name != "Beckn_ONIX"'
+  # Never forward request signatures, even if an adapter captures them.
+  attributes/strip:
+    actions:
+      - key: http.request.header.authorization
+        action: delete
+      - key: http.request.header.x-request-id
+        action: delete
+  batch:
+    send_batch_size: 200
+    timeout: 2s
+
+exporters:
+  otlphttp/reporting:
+    endpoint: http://<reporting-service-host>:8080
+    encoding: json
+    compression: none
+    retry_on_failure:
+      enabled: true
+      max_elapsed_time: 10m
+    sending_queue:
+      enabled: true
+      queue_size: 5000
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/audit_only, attributes/strip, batch]
+      exporters: [otlphttp/reporting]
+  telemetry:
+    logs:
+      level: info

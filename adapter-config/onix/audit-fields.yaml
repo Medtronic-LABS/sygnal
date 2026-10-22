@@ -1,0 +1,58 @@
+# Sygnal network: ONIX audit field allow-list (selective mode).
+#
+# Used by ONIX's built-in OpenTelemetry audit logging (the `otelsetup` plugin).
+# Only the dot-paths listed below leave the adapter. Everything else in the
+# message (patient details, notes, documents, consent, addresses) is dropped by
+# the adapter itself before export. Arrays are traversed transparently, so
+# `message.contract.commitments.status.descriptor.code` matches every commitment.
+#
+# The network's collector applies the same list a second time before anything
+# is stored (see ../collector/config.yaml).
+#
+# Level: these are per-message metadata records. Sygnal v0.9 allows per-message
+# instrumentation (InstrumentationSection level PER_TRANSACTION) only on networks
+# declared NON_PRODUCTION, and only until the policy's expiry. Production networks
+# report aggregates.
+mode: selective
+
+# None of the selected fields hold personal data, so no masking is needed.
+patterns: {}
+maskRules: []
+pathOverrides: []
+captureSignatureHeaders: false
+
+selectedFields:
+  default:
+    # Who, what, when: the Beckn context header
+    - context.action
+    - context.version
+    - context.networkId
+    - context.transactionId
+    - context.messageId
+    - context.timestamp
+    - context.ttl
+    - context.bapId
+    - context.bppId
+    - context.senderId
+    - context.receiverId
+    # Coordination metadata: no clinical content
+    - message.contract.id
+    - message.contract.status.code
+    - message.contract.contractAttributes.healthServiceType
+    - message.contract.contractAttributes.referralNote.urgency
+    - message.contract.contractAttributes.deviation.reasonCode.code
+    - message.contract.commitments.status.descriptor.code
+    - message.contract.commitments.resources.resourceAttributes.healthServiceType
+    - message.contract.commitments.offer.offerAttributes.healthServiceType
+    - message.contract.performance.performanceAttributes.healthServiceType
+    - message.contract.performance.performanceAttributes.attendanceStatus
+
+    # Optional: care-pathway view. Enable only where the network's governance allows.
+    # A pathway or specialty code says something about the patient's condition, and
+    # exact dates can help re-identify people at small facilities.
+    # - message.contract.contractAttributes.carePathways        # proposed field
+    # - message.contract.contractAttributes.targetCriteria.specialty.code
+    # - message.contract.contractAttributes.targetCriteria.subSpecialty.code
+    # - message.contract.contractAttributes.referralNote.accessWindowStart
+    # - message.contract.contractAttributes.referralNote.accessWindowEnd
+    # - message.contract.performance.performanceAttributes.outcomeDeliveredAt

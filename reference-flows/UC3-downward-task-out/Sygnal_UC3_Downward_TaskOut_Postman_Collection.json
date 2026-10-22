@@ -1,0 +1,597 @@
+{
+  "info": {
+    "name": "Sygnal — UC3 Downward Task-out (ComEMR → DIGIT HCM)",
+    "_postman_id": "2cd4d339-a696-5522-8d5d-6821b9fa47be",
+    "description": "### Quick-start: environment setup\n\n1. Import this use case's **`*_Dev.postman_environment.json`** (in the same\n   `reference-flows/` folder) into Postman (Environments → Import). Each use case\n   ships a self-contained environment — Postman allows only one active environment\n   at a time, so per-UC envs avoid one ever-growing shared file.\n2. Select that environment from the picker.\n3. Set `bpp_uri`, `bap_uri`, and `auth_token` for your sandbox. `bpp_uri` is the target\n   base URL and switches by transaction (ComEMR for T1, HCM for UC3, CARE for UC4-T2).\n4. `network_id` is `example.net/health` (STUB) — confirm with the registry team.\n5. Subscriber IDs (`hcm_np_id`, `comemr_np_id`, `care_np_id`) and all keys are STUBBED.\n\n**Envelope note:** `context.version` is `2.0.0` — the Beckn *core message* version (a\nconst in beckn.yaml). The domain schema packs (HealthReferral / ServiceCoordination)\nare v2.1; that shows up in the `@context` URLs, not the envelope.\n\n## Sygnal — UC3 · Downward Task-out (ComEMR → DIGIT HCM)\n\n**Scenario:** ComEMR needs field checks / data collection performed by a campaign-mode CHW.\nIt discovers a suitable campaign, then contracts the task.\n\n**Roles:** BAP = ComEMR (seeker). BPP = DIGIT HCM (provider offering campaign field capacity).\n\n**Matched transaction:** discover → on_discover → select → init → confirm → on_confirm → status → update.\n\n**Payload:** the **generic `ServiceCoordination`** contract (not `HealthReferral`) — a field\ntask has no clinical specialty/urgency/referral-note, so the generic base is the correct fit.\n`targetCriteria.serviceCategory` = `FIELD_DATA_COLLECTION`, a **self-authored** `ServiceCategory`\nCodedValue (permitted by the schema's self-owned CodedValue design).\n\n**Data path:** collected clinical data travels via the records/HIE layer — only task metadata\nand completion state are on-network.\n\n### ⚠ Schema gap — consent on the generic contract\nThe generic `ServiceContract` / `ServiceCoordination` / `ServiceParticipant` pack has **no\nconsent field**. Consent (`hrf:consent`) exists only in the health pack. UC3's class-A consent\nis therefore carried here as a **self-authored extension object** on the generic\n`contractAttributes`, mirroring the `hrf:consent` shape. To standardise, either add a generic\n`consent` field to `ServiceContract` or bind consent via `ServiceConsideration`.\n",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "domain",
+      "value": "health",
+      "type": "string"
+    },
+    {
+      "key": "network_id",
+      "value": "example.net/health",
+      "type": "string",
+      "description": "STUB — confirm exact value with the network registry team."
+    },
+    {
+      "key": "codedvalue_ctx",
+      "value": "https://raw.githubusercontent.com/beckn/DHP-Specs/main/devkit/stub/context.jsonld",
+      "type": "string"
+    },
+    {
+      "key": "auth_token",
+      "value": "",
+      "type": "string",
+      "description": "Network-issued JWT — set before running."
+    },
+    {
+      "key": "bpp_uri",
+      "value": "",
+      "type": "string",
+      "description": "Target base URL. Switch per transaction (ComEMR for T1; HCM for UC3; CARE for UC4-T2)."
+    },
+    {
+      "key": "bap_uri",
+      "value": "",
+      "type": "string",
+      "description": "Caller callback base URL for on_* simulations."
+    },
+    {
+      "key": "hcm_np_id",
+      "value": "hcm-np-digit-hcm-001",
+      "type": "string",
+      "description": "DIGIT HCM subscriber id (STUB)."
+    },
+    {
+      "key": "comemr_np_id",
+      "value": "comemr-np-spice-001",
+      "type": "string",
+      "description": "ComEMR/SPICE subscriber id (STUB)."
+    },
+    {
+      "key": "care_np_id",
+      "value": "care-np-phu-ext-001",
+      "type": "string",
+      "description": "CARE (external PHU HIS) subscriber id (STUB)."
+    },
+    {
+      "key": "transaction_id_uc1",
+      "value": "b1a1e1d1-0001-4000-8000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "coordination_id_uc1",
+      "value": "b1a1e1d1-0001-4000-8000-0000000000a1",
+      "type": "string",
+      "description": "UC1 Referral ID."
+    },
+    {
+      "key": "transaction_id_uc2",
+      "value": "b1a1e1d1-0002-4000-8000-000000000002",
+      "type": "string"
+    },
+    {
+      "key": "coordination_id_uc2",
+      "value": "b1a1e1d1-0002-4000-8000-0000000000a2",
+      "type": "string",
+      "description": "UC2 Referral ID."
+    },
+    {
+      "key": "transaction_id_uc3",
+      "value": "b1a1e1d1-0003-4000-8000-000000000003",
+      "type": "string"
+    },
+    {
+      "key": "coordination_id_uc3",
+      "value": "b1a1e1d1-0003-4000-8000-0000000000a3",
+      "type": "string",
+      "description": "UC3 task-out coordination id."
+    },
+    {
+      "key": "transaction_id_uc4_t1",
+      "value": "b1a1e1d1-0004-4000-8000-000000000041",
+      "type": "string"
+    },
+    {
+      "key": "transaction_id_uc4_t2",
+      "value": "b1a1e1d1-0004-4000-8000-000000000042",
+      "type": "string"
+    },
+    {
+      "key": "coordination_id_uc4",
+      "value": "b1a1e1d1-0004-4000-8000-0000000000a4",
+      "type": "string",
+      "description": "UC4 T1 Referral ID; carried into T2 as coordinationRef."
+    },
+    {
+      "key": "booking_id_uc4",
+      "value": "b1a1e1d1-0004-4000-8000-0000000000b4",
+      "type": "string",
+      "description": "UC4 T2 (CARE) booking id = T1 targetBookingRef."
+    },
+    {
+      "key": "chw_campaign_participant_id",
+      "value": "participant-chw-campaign",
+      "type": "string"
+    },
+    {
+      "key": "chw_clinical_participant_id",
+      "value": "participant-chw-clinical",
+      "type": "string"
+    },
+    {
+      "key": "child_participant_id",
+      "value": "participant-child-uc1",
+      "type": "string"
+    },
+    {
+      "key": "mother_participant_id",
+      "value": "participant-mother-uc2",
+      "type": "string"
+    },
+    {
+      "key": "routine_chw_participant_id",
+      "value": "participant-routine-chw",
+      "type": "string"
+    },
+    {
+      "key": "comemr_coordinator_participant_id",
+      "value": "participant-comemr-coordinator",
+      "type": "string"
+    },
+    {
+      "key": "care_provider_participant_id",
+      "value": "participant-care-provider",
+      "type": "string"
+    },
+    {
+      "key": "coord_resource_id",
+      "value": "res-comemr-coord",
+      "type": "string"
+    },
+    {
+      "key": "coord_offer_id",
+      "value": "offer-comemr-coord",
+      "type": "string"
+    },
+    {
+      "key": "coord_catalog_id",
+      "value": "catalog-comemr-coord",
+      "type": "string"
+    },
+    {
+      "key": "campaign_resource_id",
+      "value": "res-hcm-campaign-field",
+      "type": "string"
+    },
+    {
+      "key": "campaign_offer_id",
+      "value": "offer-hcm-campaign-field",
+      "type": "string"
+    },
+    {
+      "key": "campaign_catalog_id",
+      "value": "catalog-hcm-campaign",
+      "type": "string"
+    },
+    {
+      "key": "care_resource_id",
+      "value": "res-care-phu",
+      "type": "string"
+    },
+    {
+      "key": "care_offer_id",
+      "value": "offer-care-phu",
+      "type": "string"
+    },
+    {
+      "key": "care_catalog_id",
+      "value": "catalog-care-phu",
+      "type": "string"
+    },
+    {
+      "key": "referralnote_doc_ref",
+      "value": "referralnote-001",
+      "type": "string"
+    },
+    {
+      "key": "outcomenote_doc_ref",
+      "value": "outcomenote-001",
+      "type": "string"
+    },
+    {
+      "key": "consent_id",
+      "value": "b1a1e1d1-0000-4000-8000-0000000000c1",
+      "type": "string"
+    },
+    {
+      "key": "consent_doc_ref",
+      "value": "consent-001",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Task-out Coordination  (BAP ComEMR → BPP DIGIT HCM)",
+      "description": "Downward matched task-out over the generic ServiceCoordination contract.",
+      "item": [
+        {
+          "name": "01 — discover",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"discover\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{comemr_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc3}}\",\n    \"messageId\": \"7dbb0b4c-248d-5933-829f-40e736fa8eae\",\n    \"timestamp\": \"2026-07-06T14:50:00+03:00\",\n    \"schemaContext\": [\n      \"https://schema.beckn.io/ServiceCoordinationResource/v2.1/context.jsonld\",\n      \"https://schema.beckn.io/ServiceCoordinationOffer/v2.1/context.jsonld\"\n    ]\n  },\n  \"message\": {\n    \"intent\": {\n      \"textSearch\": \"campaign field capacity net distribution catchment DEMO-01\",\n      \"filters\": {\n        \"type\": \"jsonpath\",\n        \"expression\": \"$.catalogs[*].resources[*] ? (@.resourceAttributes.acceptanceMode == \\\"MANUAL_REVIEW\\\")\"\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bpp_uri}}/discover"
+            },
+            "description": "ComEMR discovers campaigns with field reach in the catchment (matched transaction). Broadcast — no bppId; schemaContext present."
+          },
+          "response": []
+        },
+        {
+          "name": "02 — on_discover",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_discover\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{comemr_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc3}}\",\n    \"messageId\": \"f6d4f74d-300b-5fce-bb8d-010d4a428e8f\",\n    \"timestamp\": \"2026-07-06T14:51:00+03:00\",\n    \"bppId\": \"{{hcm_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\",\n    \"schemaContext\": [\n      \"https://schema.beckn.io/ServiceCoordinationResource/v2.1/context.jsonld\",\n      \"https://schema.beckn.io/ServiceCoordinationOffer/v2.1/context.jsonld\"\n    ]\n  },\n  \"message\": {\n    \"catalogs\": [\n      {\n        \"id\": \"{{campaign_catalog_id}}\",\n        \"bppId\": \"{{hcm_np_id}}\",\n        \"bppUri\": \"{{bpp_uri}}\",\n        \"descriptor\": {\n          \"name\": \"DIGIT HCM — Campaign Field Capacity\"\n        },\n        \"provider\": {\n          \"id\": \"{{chw_campaign_participant_id}}\",\n          \"descriptor\": {\n            \"name\": \"ITN Campaign — Catchment DEMO-01\"\n          }\n        },\n        \"resources\": [\n          {\n            \"id\": \"{{campaign_resource_id}}\",\n            \"descriptor\": {\n              \"name\": \"Campaign Field Capacity\",\n              \"shortDesc\": \"Care-coordination desk\",\n              \"longDesc\": \"Standing coordination capability: routes referrals to clinical CHW / PHU, manages lifecycle and handover.\"\n            },\n            \"resourceAttributes\": {\n              \"@context\": \"https://schema.beckn.io/ServiceCoordinationResource/v2.1/context.jsonld\",\n              \"@type\": \"scres:ServiceCoordinationResource\",\n              \"coordinationScope\": {\n                \"referralCategories\": [\n                  {\n                    \"@context\": \"{{codedvalue_ctx}}\",\n                    \"@type\": \"ReferralCategory\",\n                    \"code\": \"OPERATIONAL\",\n                    \"display\": \"Operational\"\n                  }\n                ],\n                \"targetServiceTypes\": [\n                  {\n                    \"@context\": \"{{codedvalue_ctx}}\",\n                    \"@type\": \"TargetServiceType\",\n                    \"code\": \"FIELD_VISIT\",\n                    \"display\": \"Field_Visit\"\n                  }\n                ],\n                \"geographyScope\": [\n                  {\n                    \"@context\": \"{{codedvalue_ctx}}\",\n                    \"@type\": \"LGDDistrict\",\n                    \"code\": \"DEMO-01\",\n                    \"display\": \"Campaign District\"\n                  }\n                ]\n              },\n              \"acceptanceMode\": \"MANUAL_REVIEW\",\n              \"supportedUrgencyTiers\": [\n                \"ROUTINE\",\n                \"URGENT\",\n                \"EMERGENCY\"\n              ]\n            }\n          }\n        ],\n        \"offers\": [\n          {\n            \"id\": \"{{campaign_offer_id}}\",\n            \"resourceIds\": [\n              \"{{campaign_resource_id}}\"\n            ],\n            \"descriptor\": {\n              \"name\": \"Field task engagement\",\n              \"shortDesc\": \"Campaign-mode CHW field checks / data collection\"\n            },\n            \"offerAttributes\": {\n              \"@context\": \"https://schema.beckn.io/ServiceCoordinationOffer/v2.1/context.jsonld\",\n              \"@type\": \"scoff:ServiceCoordinationOffer\",\n              \"coverageWindow\": {\n                \"start\": \"2026-07-01\",\n                \"end\": \"2026-07-31\"\n              }\n            }\n          }\n        ]\n      }\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_discover"
+            },
+            "description": "HCM returns its campaign field-capacity offer (generic ServiceCoordinationResource / ServiceCoordinationOffer)."
+          },
+          "response": []
+        },
+        {
+          "name": "03 — select",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"select\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{comemr_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc3}}\",\n    \"messageId\": \"699de8ea-a495-5120-9631-7f91c641f60c\",\n    \"timestamp\": \"2026-07-06T15:00:00+03:00\",\n    \"bppId\": \"{{hcm_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"status\": {\n        \"code\": \"DRAFT\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"DRAFT\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{campaign_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{campaign_offer_id}}\",\n            \"resourceIds\": [\n              \"{{campaign_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"participants\": [\n        {\n          \"id\": \"{{comemr_coordinator_participant_id}}\",\n          \"participantAttributes\": {\n            \"@context\": \"https://schema.beckn.io/ServiceParticipant/v2.1/context.jsonld\",\n            \"@type\": \"spa:ServiceParticipant\",\n            \"participantRole\": \"REQUESTER\"\n          }\n        },\n        {\n          \"id\": \"{{chw_campaign_participant_id}}\",\n          \"participantAttributes\": {\n            \"@context\": \"https://schema.beckn.io/ServiceParticipant/v2.1/context.jsonld\",\n            \"@type\": \"spa:ServiceParticipant\",\n            \"participantRole\": \"FIELD_WORKER\"\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/ServiceCoordination/v2.1/context.jsonld\",\n        \"@type\": \"scoord:ServiceCoordination\",\n        \"coordinationId\": \"{{coordination_id_uc3}}\",\n        \"lifecycleState\": \"DRAFT\",\n        \"targetCriteria\": {\n          \"serviceCategory\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"ServiceCategory\",\n            \"code\": \"FIELD_DATA_COLLECTION\",\n            \"display\": \"Field data collection\"\n          },\n          \"urgencyTier\": \"ROUTINE\",\n          \"modality\": \"IN_PERSON\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bpp_uri}}/select"
+            },
+            "description": "ComEMR selects the campaign to perform field checks / data collection. Generic ServiceCoordination contract; serviceCategory FIELD_DATA_COLLECTION (self-authored CodedValue)."
+          },
+          "response": []
+        },
+        {
+          "name": "04 — on_select",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_select\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{comemr_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc3}}\",\n    \"messageId\": \"e31cf27d-d35e-56d4-9a44-267e800711c6\",\n    \"timestamp\": \"2026-07-06T15:01:00+03:00\",\n    \"bppId\": \"{{hcm_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc3}}\",\n      \"status\": {\n        \"code\": \"DRAFT\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"DRAFT\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{campaign_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{campaign_offer_id}}\",\n            \"resourceIds\": [\n              \"{{campaign_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/ServiceCoordination/v2.1/context.jsonld\",\n        \"@type\": \"scoord:ServiceCoordination\",\n        \"coordinationId\": \"{{coordination_id_uc3}}\",\n        \"lifecycleState\": \"DRAFT\",\n        \"targetCriteria\": {\n          \"serviceCategory\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"ServiceCategory\",\n            \"code\": \"FIELD_DATA_COLLECTION\",\n            \"display\": \"Field data collection\"\n          },\n          \"urgencyTier\": \"ROUTINE\",\n          \"modality\": \"IN_PERSON\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_select"
+            },
+            "description": "HCM accepts; assigns the coordination (task) id."
+          },
+          "response": []
+        },
+        {
+          "name": "05 — init",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"init\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{comemr_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc3}}\",\n    \"messageId\": \"1c754d1c-dd24-507c-81b6-dcf198cad448\",\n    \"timestamp\": \"2026-07-06T15:02:00+03:00\",\n    \"bppId\": \"{{hcm_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc3}}\",\n      \"status\": {\n        \"code\": \"DRAFT\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"DRAFT\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{campaign_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{campaign_offer_id}}\",\n            \"resourceIds\": [\n              \"{{campaign_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"participants\": [\n        {\n          \"id\": \"{{comemr_coordinator_participant_id}}\",\n          \"participantAttributes\": {\n            \"@context\": \"https://schema.beckn.io/ServiceParticipant/v2.1/context.jsonld\",\n            \"@type\": \"spa:ServiceParticipant\",\n            \"participantRole\": \"REQUESTER\"\n          }\n        },\n        {\n          \"id\": \"{{chw_campaign_participant_id}}\",\n          \"participantAttributes\": {\n            \"@context\": \"https://schema.beckn.io/ServiceParticipant/v2.1/context.jsonld\",\n            \"@type\": \"spa:ServiceParticipant\",\n            \"participantRole\": \"FIELD_WORKER\"\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/ServiceCoordination/v2.1/context.jsonld\",\n        \"@type\": \"scoord:ServiceCoordination\",\n        \"coordinationId\": \"{{coordination_id_uc3}}\",\n        \"lifecycleState\": \"DRAFT\",\n        \"targetCriteria\": {\n          \"serviceCategory\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"ServiceCategory\",\n            \"code\": \"FIELD_DATA_COLLECTION\",\n            \"display\": \"Field data collection\"\n          },\n          \"urgencyTier\": \"ROUTINE\",\n          \"modality\": \"IN_PERSON\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bpp_uri}}/init"
+            },
+            "description": "Binding intent."
+          },
+          "response": []
+        },
+        {
+          "name": "06 — on_init",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_init\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{comemr_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc3}}\",\n    \"messageId\": \"51479f74-ed0f-519d-be24-17c67665566e\",\n    \"timestamp\": \"2026-07-06T15:03:00+03:00\",\n    \"bppId\": \"{{hcm_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc3}}\",\n      \"status\": {\n        \"code\": \"DRAFT\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"DRAFT\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{campaign_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{campaign_offer_id}}\",\n            \"resourceIds\": [\n              \"{{campaign_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/ServiceCoordination/v2.1/context.jsonld\",\n        \"@type\": \"scoord:ServiceCoordination\",\n        \"coordinationId\": \"{{coordination_id_uc3}}\",\n        \"lifecycleState\": \"DRAFT\",\n        \"targetCriteria\": {\n          \"serviceCategory\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"ServiceCategory\",\n            \"code\": \"FIELD_DATA_COLLECTION\",\n            \"display\": \"Field data collection\"\n          },\n          \"urgencyTier\": \"ROUTINE\",\n          \"modality\": \"IN_PERSON\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_init"
+            },
+            "description": "Draft echoed."
+          },
+          "response": []
+        },
+        {
+          "name": "07 — confirm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"confirm\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{comemr_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc3}}\",\n    \"messageId\": \"dedeaa87-d610-52fb-8fd8-954cd926b1e9\",\n    \"timestamp\": \"2026-07-06T15:05:00+03:00\",\n    \"bppId\": \"{{hcm_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc3}}\",\n      \"status\": {\n        \"code\": \"ACTIVE\"\n      },\n      \"descriptor\": {\n        \"name\": \"Field Task-out — data collection\",\n        \"docs\": [\n          {\n            \"id\": \"{{consent_doc_ref}}\",\n            \"name\": \"Consent — CHW-mediated (Class A)\",\n            \"url\": \"https://docs.example.org/consent/{{consent_doc_ref}}.pdf\",\n            \"mimeType\": \"application/pdf\"\n          }\n        ]\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"ACTIVE\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{campaign_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{campaign_offer_id}}\",\n            \"resourceIds\": [\n              \"{{campaign_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/ServiceCoordination/v2.1/context.jsonld\",\n        \"@type\": \"scoord:ServiceCoordination\",\n        \"coordinationId\": \"{{coordination_id_uc3}}\",\n        \"lifecycleState\": \"ACTIVE\",\n        \"targetCriteria\": {\n          \"serviceCategory\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"ServiceCategory\",\n            \"code\": \"FIELD_DATA_COLLECTION\",\n            \"display\": \"Field data collection\"\n          },\n          \"urgencyTier\": \"ROUTINE\",\n          \"modality\": \"IN_PERSON\"\n        },\n        \"consent\": {\n          \"consentClass\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"ConsentClass\",\n            \"code\": \"A\",\n            \"display\": \"Explicit, mediated (CHW-mediated)\"\n          },\n          \"consentId\": \"{{consent_id}}\",\n          \"consentDocRef\": \"{{consent_doc_ref}}\",\n          \"patientParticipantId\": \"{{comemr_coordinator_participant_id}}\",\n          \"consentStandard\": \"HealthConsent/v1\",\n          \"consentedAt\": \"2026-07-06T15:00:00+03:00\",\n          \"consentedBy\": \"{{comemr_coordinator_participant_id}}\",\n          \"purposeOfCollection\": [\n            \"REFERRAL_CARE\",\n            \"TREATMENT\"\n          ],\n          \"mediatorCredentialRef\": \"did:example:chw:{{chw_campaign_participant_id}}\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bpp_uri}}/confirm"
+            },
+            "description": "Task-out contracted. Consent class A carried (self-authored extension on the generic contract — see collection description gap note)."
+          },
+          "response": []
+        },
+        {
+          "name": "08 — on_confirm  ★ Task-out contracted",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_confirm\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{comemr_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc3}}\",\n    \"messageId\": \"fd67207d-cbfe-58b4-86b9-994091dc5685\",\n    \"timestamp\": \"2026-07-06T15:06:00+03:00\",\n    \"bppId\": \"{{hcm_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc3}}\",\n      \"status\": {\n        \"code\": \"ACTIVE\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"ACTIVE\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{campaign_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{campaign_offer_id}}\",\n            \"resourceIds\": [\n              \"{{campaign_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/ServiceCoordination/v2.1/context.jsonld\",\n        \"@type\": \"scoord:ServiceCoordination\",\n        \"coordinationId\": \"{{coordination_id_uc3}}\",\n        \"lifecycleState\": \"ACTIVE\",\n        \"targetCriteria\": {\n          \"serviceCategory\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"ServiceCategory\",\n            \"code\": \"FIELD_DATA_COLLECTION\",\n            \"display\": \"Field data collection\"\n          },\n          \"urgencyTier\": \"ROUTINE\",\n          \"modality\": \"IN_PERSON\"\n        },\n        \"consent\": {\n          \"consentClass\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"ConsentClass\",\n            \"code\": \"A\",\n            \"display\": \"Explicit, mediated (CHW-mediated)\"\n          },\n          \"consentId\": \"{{consent_id}}\",\n          \"consentDocRef\": \"{{consent_doc_ref}}\",\n          \"patientParticipantId\": \"{{comemr_coordinator_participant_id}}\",\n          \"consentStandard\": \"HealthConsent/v1\",\n          \"consentedAt\": \"2026-07-06T15:00:00+03:00\",\n          \"consentedBy\": \"{{comemr_coordinator_participant_id}}\",\n          \"purposeOfCollection\": [\n            \"REFERRAL_CARE\",\n            \"TREATMENT\"\n          ],\n          \"mediatorCredentialRef\": \"did:example:chw:{{chw_campaign_participant_id}}\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_confirm"
+            },
+            "description": "HCM accepts; a campaign-mode CHW will perform the checks. lifecycleState ACTIVE."
+          },
+          "response": []
+        },
+        {
+          "name": "09 — status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"status\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{comemr_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc3}}\",\n    \"messageId\": \"62a91a53-3b4a-5d00-9617-224fe2624a45\",\n    \"timestamp\": \"2026-07-06T16:00:00+03:00\",\n    \"bppId\": \"{{hcm_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc3}}\",\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"ACTIVE\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{campaign_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{campaign_offer_id}}\",\n            \"resourceIds\": [\n              \"{{campaign_resource_id}}\"\n            ]\n          }\n        }\n      ]\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bpp_uri}}/status"
+            },
+            "description": "ComEMR polls task progress."
+          },
+          "response": []
+        },
+        {
+          "name": "10 — on_status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_status\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{comemr_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc3}}\",\n    \"messageId\": \"561b7510-49a7-599e-91bc-827b8b482158\",\n    \"timestamp\": \"2026-07-06T16:01:00+03:00\",\n    \"bppId\": \"{{hcm_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc3}}\",\n      \"status\": {\n        \"code\": \"ACTIVE\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"ACTIVE\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{campaign_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{campaign_offer_id}}\",\n            \"resourceIds\": [\n              \"{{campaign_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/ServiceCoordination/v2.1/context.jsonld\",\n        \"@type\": \"scoord:ServiceCoordination\",\n        \"coordinationId\": \"{{coordination_id_uc3}}\",\n        \"lifecycleState\": \"ATTENDED\",\n        \"targetCriteria\": {\n          \"serviceCategory\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"ServiceCategory\",\n            \"code\": \"FIELD_DATA_COLLECTION\",\n            \"display\": \"Field data collection\"\n          },\n          \"urgencyTier\": \"ROUTINE\",\n          \"modality\": \"IN_PERSON\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_status"
+            },
+            "description": "Field visit performed; consent captured at the doorstep."
+          },
+          "response": []
+        },
+        {
+          "name": "11 — update — task complete (CLOSED)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"update\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{comemr_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc3}}\",\n    \"messageId\": \"8dc9254e-3296-5392-8c78-142366b5f46a\",\n    \"timestamp\": \"2026-07-06T18:00:00+03:00\",\n    \"bppId\": \"{{hcm_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc3}}\",\n      \"status\": {\n        \"code\": \"COMPLETE\"\n      },\n      \"commitments\": [\n        {\n          \"id\": \"commitment-001\",\n          \"status\": {\n            \"descriptor\": {\n              \"code\": \"CLOSED\"\n            }\n          },\n          \"resources\": [\n            {\n              \"id\": \"{{campaign_resource_id}}\",\n              \"quantity\": {\n                \"count\": 1\n              }\n            }\n          ],\n          \"offer\": {\n            \"id\": \"{{campaign_offer_id}}\",\n            \"resourceIds\": [\n              \"{{campaign_resource_id}}\"\n            ]\n          }\n        }\n      ],\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/ServiceCoordination/v2.1/context.jsonld\",\n        \"@type\": \"scoord:ServiceCoordination\",\n        \"coordinationId\": \"{{coordination_id_uc3}}\",\n        \"lifecycleState\": \"CLOSED\",\n        \"targetCriteria\": {\n          \"serviceCategory\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"ServiceCategory\",\n            \"code\": \"FIELD_DATA_COLLECTION\",\n            \"display\": \"Field data collection\"\n          },\n          \"urgencyTier\": \"ROUTINE\",\n          \"modality\": \"IN_PERSON\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bpp_uri}}/update"
+            },
+            "description": "HCM reports the task complete. Collected clinical data travels via the records/HIE layer — only task metadata and completion state are on-network."
+          },
+          "response": []
+        },
+        {
+          "name": "12 — on_update  ★ Task complete",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "description": "Network-issued JWT."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"{{domain}}\",\n    \"networkId\": \"{{network_id}}\",\n    \"action\": \"on_update\",\n    \"version\": \"2.0.0\",\n    \"bapId\": \"{{comemr_np_id}}\",\n    \"bapUri\": \"{{bap_uri}}\",\n    \"transactionId\": \"{{transaction_id_uc3}}\",\n    \"messageId\": \"ea4d1a4d-4edd-5b22-9e84-83e3103f5163\",\n    \"timestamp\": \"2026-07-06T18:01:00+03:00\",\n    \"bppId\": \"{{hcm_np_id}}\",\n    \"bppUri\": \"{{bpp_uri}}\"\n  },\n  \"message\": {\n    \"contract\": {\n      \"id\": \"{{coordination_id_uc3}}\",\n      \"status\": {\n        \"code\": \"COMPLETE\"\n      },\n      \"contractAttributes\": {\n        \"@context\": \"https://schema.beckn.io/ServiceCoordination/v2.1/context.jsonld\",\n        \"@type\": \"scoord:ServiceCoordination\",\n        \"coordinationId\": \"{{coordination_id_uc3}}\",\n        \"lifecycleState\": \"CLOSED\",\n        \"targetCriteria\": {\n          \"serviceCategory\": {\n            \"@context\": \"{{codedvalue_ctx}}\",\n            \"@type\": \"ServiceCategory\",\n            \"code\": \"FIELD_DATA_COLLECTION\",\n            \"display\": \"Field data collection\"\n          },\n          \"urgencyTier\": \"ROUTINE\",\n          \"modality\": \"IN_PERSON\"\n        }\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{bap_uri}}/on_update"
+            },
+            "description": "Terminal ack."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

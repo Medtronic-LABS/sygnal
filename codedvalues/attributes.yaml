@@ -1,0 +1,148 @@
+openapi: 3.1.1
+$id: "https://raw.githubusercontent.com/Medtronic-LABS/sygnal/main/codedvalues/attributes.yaml"
+info:
+  title: Sygnal network CodedValues
+  version: "0.9.0"
+  description: >
+    The code lists a Sygnal network uses, one class per CodedValue @type. Each class exposes a `code`
+    enum plus an optional `display`, and is resolved through the sibling context.jsonld, following the
+    Beckn DHP CodedValue pattern ({@context, @type, code, display}).
+
+    Two kinds of list live here. Sygnal lists (prefixed `sygnal:`) are used by the Sygnal coordination
+    APIs. Shared lists keep the @type names the Beckn health and service schema packs use, so payloads
+    built on those packs point at this network's value sets. `x-upstream` names where a shared list
+    started; `x-sygnal-additions` lists the members this network added. Within a minor version, members
+    are only added, never removed or redefined.
+
+    The lists are drafts for review.
+components:
+  schemas:
+
+    # ── Sygnal lists ────────────────────────────────────────────────────────────
+
+    "sygnal:CoverageState":
+      description: Coverage state of a household or person in a campaign or programme (DeviationReport expected/observed state).
+      type: object
+      properties:
+        code: { type: string, enum: [COVERED, PARTIAL, MISSED, REFUSED] }
+        display: { type: string }
+
+    "sygnal:TransitionState":
+      description: Coordination state of a transition, for DeviationReport expected/observed state. Mirrors the referral lifecycle at the level a deviation needs.
+      type: object
+      properties:
+        code: { type: string, enum: [PLACED, ACCEPTED, DECLINED, ATTENDED, NO_SHOW, COMPLETED, CANCELLED, NO_RESPONSE] }
+        display: { type: string }
+
+    "sygnal:DeviationStatusReason":
+      description: Coded reason for DeviationReport.reporterStatus (reporter) or respondentStatus (respondent).
+      type: object
+      properties:
+        code:
+          type: string
+          enum:
+            # set by the reporter
+            - RESOLUTION_ACCEPTED
+            - RAISED_IN_ERROR
+            - DUPLICATE
+            - SUPERSEDED
+            # set by the respondent
+            - ACTION_TAKEN
+            - ALREADY_COMPLETED
+            - RECORD_CORRECTED
+            - NOT_RESPONSIBLE
+            - EVIDENCE_DISPUTED
+            # either
+            - OTHER
+        display: { type: string }
+
+    # ── Shared lists (same @type names as the Beckn health and service packs) ──
+
+    ConsentClass:
+      description: Consent class under which a handoff's data is shared.
+      x-upstream: "https://github.com/beckn/DHP-Specs/tree/main/devkit/stub"
+      type: object
+      properties:
+        code: { type: string, enum: [A, B, C] }
+        display: { type: string }
+
+    DeviationReasonCode:
+      description: Reason a transition deviated from its expected course (the deviation reason on a Beckn health contract).
+      x-upstream: "https://github.com/beckn/DHP-Specs/tree/main/devkit/stub"
+      type: object
+      properties:
+        code:
+          type: string
+          enum:
+            - CC_UNAVAILABLE
+            - CONSENT_WITHDRAWN
+            - COORDINATOR_UNAVAILABLE
+            - ELIGIBILITY_EXPIRED
+            - LAPSED
+            - NO_SHOW
+            - PATIENT_CANCELLED
+            - PROVIDER_CANCELLED
+            - REFERRAL_LAPSED
+            - REFERRAL_REFUSED
+            - REFERRAL_REVOKED
+            - RESCHEDULED
+            - REVOKED
+            - SERVICE_FAILURE
+            - SLA_BREACHED
+            - SUBJECT_CANCELLED
+            - TARGET_REFUSED
+        display: { type: string }
+
+    LGDDistrict:
+      description: District code for a coordination resource's geography scope. DEMO-01 is the example district used by the reference flows.
+      x-upstream: "https://github.com/beckn/DHP-Specs/tree/main/devkit/stub"
+      x-sygnal-additions: [DEMO-01]
+      type: object
+      properties:
+        code: { type: string, enum: ["507", "519", "521", "572", DEMO-01] }
+        display: { type: string }
+
+    ReferralCategory:
+      description: Category of referral a coordination resource accepts.
+      x-upstream: "https://github.com/beckn/DHP-Specs/tree/main/devkit/stub"
+      x-sygnal-additions: [OPERATIONAL]
+      type: object
+      properties:
+        code: { type: string, enum: [CLINICAL, DIAGNOSTIC, FINANCIAL, SOCIAL_SUPPORT, OPERATIONAL] }
+        display: { type: string }
+
+    ServiceCategory:
+      description: Category of service offered.
+      x-upstream: "https://github.com/beckn/DHP-Specs/tree/main/devkit/stub"
+      x-sygnal-additions: [FIELD_DATA_COLLECTION]
+      type: object
+      properties:
+        code: { type: string, enum: [ADMISSION, CONSULTATION, INVESTIGATION, PROCEDURE, FIELD_DATA_COLLECTION] }
+        display: { type: string }
+
+    Specialty:
+      description: Clinical specialty a referral targets.
+      x-upstream: "https://github.com/beckn/DHP-Specs/tree/main/devkit/stub"
+      x-sygnal-additions: [PAEDIATRICS, OBSTETRICS]
+      type: object
+      properties:
+        code: { type: string, enum: [CARDIOLOGY, NEPHROLOGY, ONCOLOGY, ORTHOPAEDICS, PULMONOLOGY, PAEDIATRICS, OBSTETRICS] }
+        display: { type: string }
+
+    SubSpecialty:
+      description: Sub-specialty or programme a referral targets.
+      x-upstream: "https://github.com/beckn/DHP-Specs/tree/main/devkit/stub"
+      x-sygnal-additions: [ICCM, MNCH]
+      type: object
+      properties:
+        code: { type: string, enum: [ELECTROPHYSIOLOGY, INTERVENTIONAL_CARDIOLOGY, ICCM, MNCH] }
+        display: { type: string }
+
+    TargetServiceType:
+      description: Type of service a coordination resource can take on.
+      x-upstream: "https://github.com/beckn/DHP-Specs/tree/main/devkit/stub"
+      x-sygnal-additions: [FIELD_VISIT]
+      type: object
+      properties:
+        code: { type: string, enum: [ADMISSION, CONSULTATION, DISPENSING, INVESTIGATION, PROCEDURE, FIELD_VISIT] }
+        display: { type: string }
