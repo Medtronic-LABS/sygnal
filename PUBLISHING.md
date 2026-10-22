@@ -24,9 +24,9 @@ The `docs/` folder is a GitBook book, synced from this repository with **GitBook
 * **GitBook blocks** such as `{% hint style="info" %}…{% endhint %}` render in GitBook but show as plain text on GitHub. Use them sparingly.
 * Edits made in the GitBook editor are committed back to the synced branch. Prefer pull requests for substantive changes.
 
-## If the repository is renamed again
+## If the repository moves
 
-GitHub redirects links to renamed repositories, but update the absolute links anyway: search for `github.com/Medtronic-LABS/` and `raw.githubusercontent.com/Medtronic-LABS/`, replace the old name, then reconnect Git Sync. (The repository was renamed from `ccn` to `sygnal` in October 2026.)
+GitHub redirects links to a renamed repository, but not to a new one. Either way, update the absolute links: search for `github.com/Medtronic-LABS/` and `raw.githubusercontent.com/Medtronic-LABS/`, replace the old name, then reconnect Git Sync. (In October 2026 the public content moved from the `ccn` repository to a new `sygnal` repository.)
 
 ## Review before publishing
 
@@ -39,6 +39,6 @@ Pages are reviewed before they appear here. Full drafts live in a private stagin
 
 - [ ] Specification and documentation licence: CC BY-SA 4.0 (decided). Replace the short `LICENSE` notice with the official legal code text from creativecommons.org if you want GitHub to detect the licence automatically.
 - [ ] Licence for reference code (for example the validator) decided; Apache-2.0 or MIT are the usual choices, as Creative Commons licences aren't meant for software.
-- [ ] Custom domain `docs.sygnal.network` connected to the public GitBook site.
+- [x] Custom domain `docs.sygnal.network` connected to the public GitBook site.
 - [ ] The `sygnal:` JSON-LD context URL (`https://spec.sygnal.network/contexts/v0.9.jsonld`) is either published or clearly marked as a placeholder (it is marked in the docs).
-- [ ] The repository is public, or the absolute GitHub links will 404 for readers.
+- [x] The repository is public, or the absolute GitHub links will 404 for readers.

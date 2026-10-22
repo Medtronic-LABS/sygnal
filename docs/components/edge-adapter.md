@@ -32,7 +32,7 @@ Sygnal **uses [Beckn ONIX](https://github.com/beckn/beckn-onix)**, Beckn's open-
 * plugins for callback latency, callback timeouts, SLA breaches and live policy updates;
 * onboarding tooling: key generation, registry record generation, and a health-check ("doctor") script.
 
-A platform that already runs ONIX, for example from the Beckn starter kit's generic devkit, can move to the Sygnal Edge Adapter mostly by configuration.
+A platform that already runs ONIX, for example from the Beckn starter kit's generic devkit, can move to the Sygnal Edge Adapter mostly by configuration. [Joining a network](../build/joining-a-network.md) lists what to configure.
 
 **Built to outlast any one foundation.** The Sygnal Edge Adapter is defined by what it must do (the functions above and the Sygnal specification), not by ONIX. Sygnal's additions are kept as separable plugins and configuration, so the adapter can follow ONIX as it evolves, or move to another foundation if ONIX's direction or support changes.
 

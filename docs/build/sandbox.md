@@ -24,7 +24,7 @@ The [reference flows](running-reference-flows.md) are a good way to start: they 
 
 ## Getting started
 
-To connect your platform, email [hello@sygnal.network](mailto:hello@sygnal.network) with a short note about your platform and what you'd like to test. You'll get the steps to join, including the sandbox network's details and dashboard addresses.
+To connect your platform, email [hello@sygnal.network](mailto:hello@sygnal.network) with a short note about your platform and what you'd like to test. You'll get the sandbox network's details and dashboard addresses. The general steps are in [Joining a network](joining-a-network.md).
 
 For help once you're connected, email [support@sygnal.network](mailto:support@sygnal.network).
 

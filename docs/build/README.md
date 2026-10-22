@@ -8,7 +8,7 @@ description: Where implementers start, depending on what you are building.
 
 | You are… | Start with |
 |---|---|
-| **A platform vendor or implementer** connecting an EMR, community health app or hospital system | The [Sygnal Sandbox](sandbox.md), the [Edge Adapter](../components/edge-adapter.md) and [Running the reference flows](running-reference-flows.md). Step-by-step onboarding guidance and an implementer checklist will be published with the first Sygnal Platform components. |
+| **A platform vendor or implementer** connecting an EMR, community health app or hospital system | The [Sygnal Sandbox](sandbox.md), the [Edge Adapter](../components/edge-adapter.md) and [Running the reference flows](running-reference-flows.md). [Joining a network](joining-a-network.md) gives the steps. An implementer checklist will be published with the first Sygnal Platform components. |
 | **A developer** who wants to see the actual messages sent between platforms | [Running the reference flows](running-reference-flows.md) and the [Use cases](../use-cases/README.md) |
 | **A network operator** setting up the shared services | [Protocol, platform and services](../concepts/protocol-platform-services.md), the [Components overview](../components/README.md) and [Network governance](../governance/README.md) |
 | **Someone reviewing or extending the specification** | [Specification overview](../specification/README.md) and [Contributing](../reference/contributing.md) |
@@ -24,7 +24,7 @@ description: Where implementers start, depending on what you are building.
 
 You don't need to implement everything at once. A sensible order is:
 
-1. **Join** the network: keys, registry record, adapter.
+1. **Join** the network: keys, registry record, adapter. See [Joining a network](joining-a-network.md).
 2. **Handoffs:** directed referrals, with status and deviations carried inside the handoff messages (in-band), as in UC1 and UC2.
 3. **Deviations:** raise `deviation/flag` when a step you are waiting for is overdue, and handle `on_flag` outcomes (dispositions).
 4. **Policies (when the network has them, at any point from here):** accept `policy/update`, fetch with `policy/get`, and apply the shared SLA rules and data rules. See [Starting without encoded policies](../concepts/policies.md#starting-without-encoded-policies).

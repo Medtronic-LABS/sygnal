@@ -65,6 +65,7 @@
 
 * [Getting started](build/README.md)
 * [Sygnal Sandbox](build/sandbox.md)
+* [Joining a network](build/joining-a-network.md)
 * [Running the reference flows](build/running-reference-flows.md)
 
 ## Governance
