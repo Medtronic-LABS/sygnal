@@ -27,7 +27,7 @@ Sygnal **uses [Beckn ONIX](https://github.com/beckn/beckn-onix)**, Beckn's open-
 
 * the Beckn health schema packs and the Sygnal API specification;
 * routing rules for the `sygnal/*` actions;
-* header-only, selective audit logging, so payload content never leaves the edge in logs;
+* selective audit logging: only the fields on the network's allow-list (the message header and coordination metadata such as service type, urgency, status and attendance) leave the edge, never patient details, notes, documents or consent;
 * telemetry export through a local collector that applies the allow-list again before anything is sent;
 * plugins for callback latency, callback timeouts, SLA breaches and live policy updates;
 * onboarding tooling: key generation, registry record generation, and a health-check ("doctor") script.

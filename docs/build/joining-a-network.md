@@ -47,7 +47,7 @@ Deploy the [Edge Adapter](../components/edge-adapter.md) beside your platform as
 * the registry and Discovery Service addresses;
 * the Beckn health schema packs and the Sygnal specification;
 * routing for Beckn actions and `sygnal/*` actions to your platform's endpoints;
-* **selective, header-only audit logging**, so no payload content is logged off the platform;
+* **selective audit logging**, so only the fields on the network's allow-list leave the platform: the message header and coordination metadata such as service type, urgency, status and attendance. Patient details, notes, documents and consent never do;
 * telemetry export to the network's address. The repository's [`adapter-config/`](https://github.com/Medtronic-LABS/sygnal/tree/main/adapter-config) folder has a ready-made ONIX allow-list and telemetry block.
 
 ### 5. Connect your platform to the adapter

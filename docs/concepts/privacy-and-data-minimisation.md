@@ -71,7 +71,7 @@ This is the one place Sygnal may carry more than a hash. Governance draws this l
 
 ## Two channels, both content-free
 
-Operational telemetry (message counts, response times, ACK/NACK replies that confirm or reject receipt, and timeouts) travels separately from coordination events and **never** carries payload content. The reference adapter is designed to enforce this in three places: selective, header-only audit logging; an allow-list at the adapter's telemetry collector; and the same allow-list again at the network's collector. See [Reporting and signals](reporting-and-signals.md#two-channels-coordination-events-and-network-telemetry).
+Operational telemetry (message counts, response times, ACK/NACK replies that confirm or reject receipt, and timeouts) travels separately from coordination events and **never** carries payload content. The reference setup enforces this in three places: the adapter's selective audit logging, which exports only the fields on the network's allow-list (the message header and coordination metadata such as service type, urgency, status and attendance); the network's collector, which keeps only those audit records and strips signatures; and the network's reporting service, which applies the allow-list again before storing anything. See [Reporting and signals](reporting-and-signals.md#two-channels-coordination-events-and-network-telemetry).
 
 ## Identifiers
 

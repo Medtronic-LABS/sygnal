@@ -15,6 +15,14 @@ The Sygnal Sandbox is an open test network. Teams connect their health platforms
 
 The [reference flows](running-reference-flows.md) are a good way to start: they run the [use cases](../use-cases/README.md) end to end.
 
+## What the sandbox supports today
+
+* **Handoffs** between platforms through ONIX, and **discovery** of care providers.
+* **Referral issues:** send `deviation/flag` to the sandbox's deviation service, which replies with `on_flag`. In the sandbox, flags go to this network service rather than directly to the other platform.
+* **Reporting:** `event/report` and network telemetry, shown on the sandbox dashboards.
+* **Not yet available:** policies (`policy/*`), shared plans (`plan/*`), signals (`signal/emit`) and the read APIs.
+* **Signatures** aren't checked yet. Sign your messages anyway, so you're ready for networks that check them.
+
 ## Sandbox rules
 
 * **Test data only.** Never send real patient information, including in notes.

@@ -13,7 +13,7 @@ This folder holds settings that connect a participant's [Beckn ONIX](https://git
 Only the fields listed in `audit-fields.yaml` leave the adapter. These are:
 
 * the Beckn context header: action, IDs, timestamp, sender and receiver;
-* coordination metadata: service type, urgency, contract and commitment status, attendance and deviation reason code.
+* coordination metadata: service type, urgency, contract and commitment status, referral lifecycle state, attendance and deviation reason code.
 
 The participant's own adapter removes patient details, notes, documents and consent before export. The network applies the same list again before it stores anything.
 

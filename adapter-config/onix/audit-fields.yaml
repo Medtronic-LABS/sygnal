@@ -38,6 +38,7 @@ selectedFields:
     # Coordination metadata: no clinical content
     - message.contract.id
     - message.contract.status.code
+    - message.contract.contractAttributes.lifecycleState
     - message.contract.contractAttributes.healthServiceType
     - message.contract.contractAttributes.referralNote.urgency
     - message.contract.contractAttributes.deviation.reasonCode.code
